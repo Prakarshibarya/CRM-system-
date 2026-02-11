@@ -1,8 +1,38 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --ha-bg: #07070A;
+  --ha-panel: #0E0F14;
+  --ha-panel2: #12141B;
+  --ha-border: rgba(255, 255, 255, 0.08);
+  --ha-text: #F5F7FF;
+  --ha-muted: rgba(245, 247, 255, 0.65);
+  --ha-faint: rgba(245, 247, 255, 0.35);
+
+  /* HighApe-style purple/pink accents */
+  --ha-accent: #B57BFF;   /* main purple */
+  --ha-accent2: #FF5BBE;  /* pink highlight */
+  --ha-accent3: #7C4DFF;  /* deeper purple */
+}
+.ha-glow {
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.06),
+    0 20px 60px rgba(0,0,0,0.55),
+    0 0 40px rgba(181,123,255,0.18);
+}
+
+.ha-bg { background-color: var(--ha-bg); }
+.ha-panel { background-color: var(--ha-panel); }
+.ha-border { border-color: var(--ha-border); }
+.ha-text { color: var(--ha-text); }
+.ha-muted { color: var(--ha-muted); }
+.ha-faint { color: var(--ha-faint); }
+.ha-accent { color: var(--ha-accent); }
+
+.ha-shadow {
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.06),
+    0 20px 60px rgba(0,0,0,0.55);
 }
 
 @theme inline {

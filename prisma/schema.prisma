@@ -1,0 +1,102 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  NEGOTIATING
+  WON
+  LOST
+}
+
+model Organizer {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?  @unique
+  phone     String?
+  city      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events Event[]
+  leads  Lead[]
+
+  crmItems CrmItem[]
+}
+
+model Event {
+  id          String    @id @default(cuid())
+  organizerId String
+  title       String
+  venue       String?
+  startAt     DateTime?
+  endAt       DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  organizer Organizer @relation(fields: [organizerId], references: [id])
+}
+
+model Lead {
+  id           String     @id @default(cuid())
+  organizerId  String
+  title        String
+  contactName  String?
+  contactPhone String?
+  contactEmail String?
+  status       LeadStatus @default(NEW)
+  notes        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizer Organizer @relation(fields: [organizerId], references: [id])
+
+  @@index([organizerId])
+  @@index([status])
+}
+
+enum Stage {
+  ONBOARDING
+  ACTIVE
+}
+
+model CrmItem {
+  id          String @id @default(cuid())
+  organizerId String
+
+  title     String
+  platform  String
+  eventType String
+  manager   String
+  stage     Stage  @default(ONBOARDING)
+
+  // optional lead/event details
+  orgName   String?
+  eventName String?
+  city      String?
+  venue     String?
+  eventLink String?
+
+  disabled       Boolean   @default(false)
+  disabledReason String?
+  disabledAt     DateTime?
+
+  onboarding Json
+  active     Json
+  activity   Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizer Organizer @relation(fields: [organizerId], references: [id])
+
+  @@index([organizerId])
+  @@index([stage])
+}
