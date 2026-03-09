@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-import LeftSearchPanel from "../../components/layout/LeftSearchPanel";
 import OnboardingCard from "../../components/onboarding/OnboardingCard";
 import OnboardingStepModal, {
   type OnboardingKey,
@@ -15,17 +14,9 @@ import { SidebarDrawer } from "../../components/layout/Sidebardrawer";
 import { useCRMStore } from "@/hooks/useCRMStore";
 import type { CRMItem } from "@/types/crm";
 import {
-  loadItems,
   saveItems,
-  createItemInDB,
-  updateItemInDB, // ✅ add this
-  seedIfEmpty,
-  updateItem,
-  addItem,
-  generateId,
-  loadItemsFromDB,
+  updateItemInDB,
 } from "../../lib/store";
-
 
 /* ------------------ Filters ------------------ */
 
@@ -100,7 +91,6 @@ function NewLeadModal({
   const [venue, setVenue] = useState("");
   const [eventLink, setEventLink] = useState("");
 
-  // reset when opened
   useEffect(() => {
     if (!open) return;
     setTitle("");
@@ -276,40 +266,28 @@ export default function OnboardingPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // ✅ shared store (DB-backed)
   const {
     items,
     selected,
-    selectedId,
     selectItem,
     addItem: addItemToStore,
     updateItem: updateItemInStore,
   } = useCRMStore();
-  //const [items, setItems] = useState<CRMItem[]>([]);
 
-  // Left panel filters
   const [query, setQuery] = useState("");
   const [platformFilter, setPlatformFilter] = useState<PlatformFilter>("All");
   const [managerFilter, setManagerFilter] = useState<string>("All");
 
-  // Step modal
   const [stepModalOpen, setStepModalOpen] = useState(false);
   const [modalItemId, setModalItemId] = useState<string | null>(null);
   const [modalKey, setModalKey] = useState<OnboardingKey>("contactDetails");
-  const [modalCurrent, setModalCurrent] = useState<OnboardingMeta | undefined>(
-    undefined
-  );
+  const [modalCurrent, setModalCurrent] = useState<OnboardingMeta | undefined>(undefined);
 
-  // New Lead modal
   const [newLeadOpen, setNewLeadOpen] = useState(false);
 
-  // Auto-open New Lead modal if /onboarding?new=1
   useEffect(() => {
     const v = searchParams.get("new");
-    if (v === "1") {
-      setNewLeadOpen(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (v === "1") setNewLeadOpen(true);
   }, [searchParams]);
 
   const managers = useMemo(() => {
@@ -350,159 +328,108 @@ export default function OnboardingPage() {
     setModalItemId(null);
     setModalCurrent(undefined);
   }
+
   async function saveStep(meta: OnboardingMeta) {
-  if (!modalItemId) return;
+    if (!modalItemId) return;
 
-  const now = meta.updatedAt || new Date().toISOString();
+    const now = meta.updatedAt || new Date().toISOString();
+    const item = items.find((i) => i.id === modalItemId);
+    if (!item) return;
 
-  const item = items.find((i) => i.id === modalItemId);
-  if (!item) return;
+    const onboarding = (item.onboarding || {}) as Record<string, OnboardingMeta>;
 
-  // 1) Build next onboarding state
-  const onboarding = (item.onboarding || {}) as Record<string, OnboardingMeta>;
+    const nextOnboarding: Record<string, OnboardingMeta> = {
+      ...onboarding,
+      [modalKey]: { ...meta, checked: true, updatedAt: now },
+    };
 
-  const nextOnboarding: Record<string, OnboardingMeta> = {
-    ...onboarding,
-    [modalKey]: { ...meta, checked: true, updatedAt: now },
-  };
+    const allDone =
+      !!nextOnboarding.contactDetails?.checked &&
+      !!nextOnboarding.commissionSettled?.checked &&
+      !!nextOnboarding.partnerCreated?.checked;
 
-  const allDone =
-    !!nextOnboarding.contactDetails?.checked &&
-    !!nextOnboarding.commissionSettled?.checked &&
-    !!nextOnboarding.partnerCreated?.checked;
+    const label =
+      modalKey === "contactDetails"
+        ? "Contact details found"
+        : modalKey === "commissionSettled"
+        ? "Commission settled"
+        : "Partner created";
 
-  const label =
-    modalKey === "contactDetails"
-      ? "Contact details found"
-      : modalKey === "commissionSettled"
-      ? "Commission settled"
-      : "Partner created";
+    const updatedItem: CRMItem = {
+      ...item,
+      stage: allDone ? "ACTIVE" : item.stage,
+      onboarding: nextOnboarding,
+      activity: [
+        ...(allDone ? [{ at: now, text: "Moved to Active Events" }] : []),
+        { at: now, text: `Onboarding: ${label}` },
+        ...(item.activity || []),
+      ],
+    };
 
-  const updatedItem: CRMItem = {
-    ...item,
-    stage: allDone ? "ACTIVE" : item.stage,
-    onboarding: nextOnboarding,
-    activity: [
-      ...(allDone ? [{ at: now, text: "Moved to Active Events" }] : []),
-      { at: now, text: `Onboarding: ${label}` },
-      ...(item.activity || []),
-    ],
-  };
+    updateItemInStore(updatedItem);
 
-  // 2) ✅ Optimistic UI (instant ticks + sidebar update)
-  updateItemInStore(updatedItem);
-
-  // 3) Persist to DB (background)
-  try {
-    await updateItemInDB(updatedItem);
-
-    // 4) Navigate if onboarding completed
-    if (allDone) {
-      router.push("/active-events");
+    try {
+      await updateItemInDB(updatedItem);
+      if (allDone) router.push("/active-events");
+    } catch (e) {
+      console.error("Failed to persist onboarding step:", e);
     }
-  } catch (e) {
-    console.error("Failed to persist onboarding step:", e);
   }
-}
-
-  
-  
-
-
-
-async function disableSelected() {
-  if (!selected) return;
-
-  const reason = prompt("Disable reason? (optional)") ?? "";
-  const now = new Date().toISOString();
-
-  const updated: CRMItem = {
-    ...selected,
-    disabled: true,
-    disabledReason: reason || undefined,
-    disabledAt: now,
-  };
-
-  // optimistic UI
-  const optimistic = items.map((x) => (x.id === updated.id ? updated : x));
-  saveItems(optimistic);
-  saveItems(optimistic);
-
-  // DB persist
-  try {
-    const saved = await updateItemInDB(updated);
-    const next = optimistic.map((x) => (x.id === saved.id ? saved : x));
-    saveItems(next);
-    saveItems(next);
-    router.push("/disabled");
-  } catch (e) {
-    console.error("Disable failed:", e);
-  }
-}
-
-
 
   async function handleCreateNewLead(payload: {
-  title: string;
-  platform: "BookMyShow" | "District" | "SortMyScene" | "Other";
-  eventType: string;
-  manager: string;
-  orgName?: string;
-  eventName?: string;
-  city?: string;
-  venue?: string;
-  eventLink?: string;
-}) {
-  // defaults for checklists
-  const onboardingDefaults = {
-    contactDetails: { checked: false },
-    commissionSettled: { checked: false },
-    partnerCreated: { checked: false },
-  };
+    title: string;
+    platform: "BookMyShow" | "District" | "SortMyScene" | "Other";
+    eventType: string;
+    manager: string;
+    orgName?: string;
+    eventName?: string;
+    city?: string;
+    venue?: string;
+    eventLink?: string;
+  }) {
+    const onboardingDefaults = {
+      contactDetails: { checked: false },
+      commissionSettled: { checked: false },
+      partnerCreated: { checked: false },
+    };
 
-  const activeDefaults = {
-    orgVerified: { checked: false },
-    discountAsked: { checked: false },
-    promoCardShared: { checked: false },
-    mysiteMade: { checked: false },
-    mysiteGiven: { checked: false },
-    promoFollowUp: { checked: false },
-    discountFollowUp: { checked: false },
-    firstSalesUpdate: { checked: false },
-  };
+    const activeDefaults = {
+      orgVerified: { checked: false },
+      discountAsked: { checked: false },
+      promoCardShared: { checked: false },
+      mysiteMade: { checked: false },
+      mysiteGiven: { checked: false },
+      promoFollowUp: { checked: false },
+      discountFollowUp: { checked: false },
+      firstSalesUpdate: { checked: false },
+    };
 
-  const created = await addItemToStore({
-    title: payload.title,
-    platform: payload.platform,
-    eventType: payload.eventType,
-    manager: payload.manager,
-    stage: "ONBOARDING",
+    const created = await addItemToStore({
+      title: payload.title,
+      platform: payload.platform,
+      eventType: payload.eventType,
+      manager: payload.manager,
+      stage: "ONBOARDING",
+      orgName: payload.orgName,
+      eventName: payload.eventName,
+      city: payload.city,
+      venue: payload.venue,
+      eventLink: payload.eventLink,
+      onboarding: onboardingDefaults as any,
+      active: activeDefaults as any,
+      disabled: false,
+    } as any);
 
-    orgName: payload.orgName,
-    eventName: payload.eventName,
-    city: payload.city,
-    venue: payload.venue,
-    eventLink: payload.eventLink,
+    if (created?.id) selectItem(created.id);
 
-    onboarding: onboardingDefaults as any,
-    active: activeDefaults as any,
-
-    disabled: false,
-  } as any);
-
-  // open drawer on the newly created item
-  if (created?.id) selectItem(created.id);
-
-  // close modal and remove ?new=1
-  setNewLeadOpen(false);
-  router.replace("/onboarding");
-}
-
+    setNewLeadOpen(false);
+    router.replace("/onboarding");
+  }
 
   return (
     <main className="min-h-screen bg-black text-white overflow-x-hidden">
       <header className="sticky top-0 z-30 border-b border-white/10 bg-black/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3">
+        <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3">
           <div className="text-lg font-semibold">Organizer Onboarding</div>
 
           <nav className="flex rounded-full bg-white/5 p-1">
@@ -525,7 +452,6 @@ async function disableSelected() {
               Disabled
             </Link>
           </nav>
-          
 
           <div className="ml-auto flex items-center gap-2">
             <button
@@ -535,29 +461,6 @@ async function disableSelected() {
             >
               + New Lead
             </button>
-            {/* <button
-                type="button"
-                className="rounded-full bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
-                onClick={() => {
-                  if (!selected) return;
-                  const reason = prompt("Disable reason? (optional)") ?? "";
-                  const now = new Date().toISOString();
-                  updateItemInStore(
-                    {
-                      ...selected,
-                      disabled: true,
-                      disabledReason: reason || undefined,
-                      disabledAt: now,
-                    } as any,
-                    `Lead disabled${reason ? `: ${reason}` : ""}`
-                  );
-                  selectItem(null);
-                  router.push("/disabled");
-                }}
-              >
-                Disable Selected
-</button> */}
-
 
             <div className="grid h-9 w-9 place-items-center rounded-full bg-white/10 text-xs">
               JD
@@ -566,44 +469,60 @@ async function disableSelected() {
         </div>
       </header>
 
-      <section className="mx-auto max-w-6xl px-4 py-6">
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_1fr] items-start">
-          {/* LEFT */}
-          <LeftSearchPanel
-            className="lg:mt-9"
-            query={query}
-            onQueryChange={setQuery}
-            platform={platformFilter}
-            onPlatformChange={setPlatformFilter}
-            manager={managerFilter}
-            onManagerChange={setManagerFilter}
-            managers={managers}
-          />
+      <section className="mx-auto max-w-7xl px-4 py-6">
+        <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Organizer / Event / City"
+            className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-white/40"
+            />
+          <select
+            value={platformFilter}
+            onChange={(e) => setPlatformFilter(e.target.value as PlatformFilter)}
+            className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-white/40"
+          >
+            <option value="All">All platforms</option>
+            <option value="BookMyShow">BookMyShow</option>
+            <option value="District">District</option>
+            <option value="SortMyScene">SortMyScene</option>
+            <option value="Other">Other</option>
+          </select>
 
-          {/* RIGHT */}
-          <div>
-            <div className="mb-3 flex items-center justify-between">
-              <div className="text-sm font-medium text-white/70">ORGANIZER / EVENT</div>
-              <div className="text-sm font-medium text-white/40">ONBOARDING CHECKLIST</div>
+          <select
+            value={managerFilter}
+            onChange={(e) => setManagerFilter(e.target.value)}
+            className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-white/40"
+          >
+            <option value="All">All managers</option>
+            {managers.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="mb-3 flex items-center justify-between">
+          <div className="text-sm font-medium text-white/70">ORGANIZER / EVENT</div>
+          <div className="text-sm font-medium text-white/40">ONBOARDING CHECKLIST</div>
+        </div>
+
+        <div className="space-y-4">
+          {onboardingItems.map((item) => (
+            <OnboardingCard
+              key={item.id}
+              item={item}
+              onOpen={openDrawer}
+              onStepClick={openStep}
+            />
+          ))}
+
+          {onboardingItems.length === 0 ? (
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-white/60">
+              No items in Onboarding. Create a new lead to start.
             </div>
-
-            <div className="space-y-4">
-              {onboardingItems.map((item) => (
-                <OnboardingCard
-                  key={item.id}
-                  item={item}
-                  onOpen={openDrawer}
-                  onStepClick={openStep}
-                />
-              ))}
-
-              {onboardingItems.length === 0 ? (
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-white/60">
-                  No items in Onboarding. Create a new lead to start.
-                </div>
-              ) : null}
-            </div>
-          </div>
+          ) : null}
         </div>
       </section>
 
@@ -625,10 +544,8 @@ async function disableSelected() {
         onUpdated={(updatedItem) => {
           const next = items.map((x) => (x.id === updatedItem.id ? updatedItem : x));
           saveItems(next);
-          saveItems(next);
         }}
       />
-
 
       <NewLeadModal
         open={newLeadOpen}

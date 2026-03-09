@@ -1,11 +1,13 @@
 "use client";
-
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-
+import { saveItems } from "@/lib/store";
 import { useCRMStore } from "@/hooks/useCRMStore";
 import type { CRMItem } from "@/types/crm";
+import { SidebarDrawer } from "@/components/layout/Sidebardrawer";
+import ActiveEventCard from "@/components/active/ActiveEventCard";
+import MilestoneModal, { type MilestoneKey } from "@/components/active/MilestoneModal";
 
 /* ------------------ Filters ------------------ */
 
@@ -31,19 +33,18 @@ function matchesQuery(item: CRMItem, q: string) {
     .includes(needle);
 }
 
-function formatTime(iso?: string) {
-  if (!iso) return "";
-  return new Date(iso).toLocaleString();
-}
-
 export default function ActiveEventsPage() {
   const router = useRouter();
 
-  const { items, selected, selectedId, selectItem, updateItem } = useCRMStore();
+  const { items, selected, selectItem, updateItem } = useCRMStore();
 
   const [query, setQuery] = useState("");
   const [platformFilter, setPlatformFilter] = useState<PlatformFilter>("All");
   const [managerFilter, setManagerFilter] = useState<string>("All");
+
+  const [milestoneOpen, setMilestoneOpen] = useState(false);
+  const [milestoneItemId, setMilestoneItemId] = useState<string | null>(null);
+  const [milestoneKey, setMilestoneKey] = useState<MilestoneKey | null>(null);
 
   const managers = useMemo(() => {
     const set = new Set<string>();
@@ -59,10 +60,27 @@ export default function ActiveEventsPage() {
       .filter((i) => matchesQuery(i, query));
   }, [items, platformFilter, managerFilter, query]);
 
+  const milestoneItem = useMemo(() => {
+    if (!milestoneItemId) return null;
+    return items.find((i) => i.id === milestoneItemId) ?? null;
+  }, [items, milestoneItemId]);
+
+  function handleMilestoneClick(itemId: string, key: MilestoneKey) {
+    setMilestoneItemId(itemId);
+    setMilestoneKey(key);
+    setMilestoneOpen(true);
+  }
+function openDrawer(id: string) {
+  selectItem(id);
+}
+
+function closeDrawer() {
+  selectItem(null);
+}
   return (
     <main className="min-h-screen bg-black text-white overflow-x-hidden">
       <header className="sticky top-0 z-30 border-b border-white/10 bg-black/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3">
+        <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3">
           <div className="text-lg font-semibold">Organizer Onboarding</div>
 
           <nav className="flex rounded-full bg-white/5 p-1">
@@ -95,7 +113,7 @@ export default function ActiveEventsPage() {
               + New Event
             </button>
 
-            <button
+            {/* <button
               type="button"
               className="rounded-full bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10 disabled:opacity-40"
               disabled={!selected}
@@ -119,7 +137,7 @@ export default function ActiveEventsPage() {
               }}
             >
               Disable Selected
-            </button>
+            </button> */}
 
             <div className="grid h-9 w-9 place-items-center rounded-full bg-white/10 text-xs">
               JD
@@ -127,105 +145,116 @@ export default function ActiveEventsPage() {
           </div>
         </div>
       </header>
+      <SidebarDrawer
+      open={!!selected}
+      item={selected}
+      onClose={closeDrawer}
+      onUpdated={(updatedItem) => {
+        const next = items.map((x) => (x.id === updatedItem.id ? updatedItem : x));
+        saveItems(next);
+      }}
+    />
 
-      {/* Filters */}
-      <section className="mx-auto max-w-6xl px-4 py-6">
-        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search..."
-            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm"
+      <section className="mx-auto max-w-7xl px-4 py-6">
+  <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+    <input
+      value={query}
+      onChange={(e) => setQuery(e.target.value)}
+      placeholder="Organizer / Event / City"
+      className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-white/40"
+    />
+
+    <select
+      value={platformFilter}
+      onChange={(e) => setPlatformFilter(e.target.value as PlatformFilter)}
+      className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-white/40"
+    >
+      <option value="All">All platforms</option>
+      <option value="BookMyShow">BookMyShow</option>
+      <option value="District">District</option>
+      <option value="SortMyScene">SortMyScene</option>
+      <option value="Other">Other</option>
+    </select>
+
+    <select
+      value={managerFilter}
+      onChange={(e) => setManagerFilter(e.target.value)}
+      className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-white/40"
+    >
+      <option value="All">All managers</option>
+      {managers.map((m) => (
+        <option key={m} value={m}>
+          {m}
+        </option>
+      ))}
+    </select>
+  </div>
+
+  <div className="mb-3 flex items-center justify-between">
+    <div className="text-sm font-medium text-white/70">ACTIVE EVENTS</div>
+    <div className="text-sm font-medium text-white/40">{activeItems.length} items</div>
+  </div>
+
+  <div className="space-y-4">
+    {activeItems.map((item) => (
+      <ActiveEventCard
+        key={item.id}
+        item={item}
+        onOpen={openDrawer}
+        onMilestoneClick={handleMilestoneClick}
+      />
+    ))}
+
+    {activeItems.length === 0 ? (
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-white/60">
+        No Active Events yet. Complete all onboarding steps to move items here.
+      </div>
+    ) : null}
+  </div>
+</section>
+
+      {milestoneOpen && milestoneItem && milestoneKey ? (
+          <MilestoneModal
+            open={milestoneOpen}
+            milestoneKey={milestoneKey}
+            milestoneLabel={
+              {
+                orgVerified: "Listing shared & verified by organizer",
+                discountAsked: "EB discount suggested",
+                promoCardShared: "Courtesy promo rate card shared",
+                mysiteMade: "Microsite created",
+                mysiteGiven: "Microsite shared with organizer",
+                promoFollowUp: "Asked if promo is needed",
+                discountFollowUp: "Asked for customer discounts",
+                firstSalesUpdate: "First ticket sales update sent",
+              }[milestoneKey]
+            }
+            current={(milestoneItem.active as any)?.[milestoneKey]}
+            onClose={() => {
+              setMilestoneOpen(false);
+              setMilestoneItemId(null);
+              setMilestoneKey(null);
+            }}
+            onSave={async (result) => {
+              const currentActive = (milestoneItem.active ?? {}) as Record<string, any>;
+
+              await updateItem(
+                {
+                  ...milestoneItem,
+                  active: {
+                    ...currentActive,
+                    [result.key]: result,
+                  },
+                } as any,
+                `Active milestone updated: ${result.key}`
+              );
+
+              setMilestoneOpen(false);
+              setMilestoneItemId(null);
+              setMilestoneKey(null);
+            }}
           />
-
-          <select
-            value={platformFilter}
-            onChange={(e) => setPlatformFilter(e.target.value as PlatformFilter)}
-            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm"
-          >
-            <option value="All">All platforms</option>
-            <option value="BookMyShow">BookMyShow</option>
-            <option value="District">District</option>
-            <option value="SortMyScene">SortMyScene</option>
-            <option value="Other">Other</option>
-          </select>
-
-          <select
-            value={managerFilter}
-            onChange={(e) => setManagerFilter(e.target.value)}
-            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm"
-          >
-            <option value="All">All managers</option>
-            {managers.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="mb-3 flex items-center justify-between">
-          <div className="text-sm font-medium text-white/70">ACTIVE EVENTS</div>
-          <div className="text-sm font-medium text-white/40">{activeItems.length} items</div>
-        </div>
-
-        <div className="space-y-4">
-          {activeItems.map((item) => (
-            <div
-              key={item.id}
-              className="rounded-2xl border border-white/10 bg-white/5 p-4"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <button
-                    type="button"
-                    onClick={() => selectItem(item.id)}
-                    className="block w-full text-left"
-                    title="Open details"
-                  >
-                    <div className="truncate text-base font-semibold">{item.title}</div>
-                  </button>
-                  <div className="mt-1 text-sm text-white/50">
-                    Found on {item.platform} • {item.eventType}
-                  </div>
-                  <div className="mt-2 text-xs text-white/40">AM: {item.manager}</div>
-                </div>
-
-                <div className="text-xs text-white/40">
-                  Updated: {formatTime((item as any).updatedAt)}
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {activeItems.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-white/60">
-              No Active Events yet. Complete all onboarding steps to move items here.
-            </div>
-          ) : null}
-        </div>
-
-        {/* simple right drawer preview */}
-        {selected ? (
-          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="truncate text-lg font-semibold">{selected.title}</div>
-                <div className="mt-1 text-sm text-white/50">
-                  {selected.platform} • {selected.eventType} • AM: {selected.manager}
-                </div>
-              </div>
-              <button
-                type="button"
-                className="rounded-full bg-white/5 px-3 py-1 text-sm text-white/70 hover:bg-white/10"
-                onClick={() => selectItem(null)}
-              >
-                ✕
-              </button>
-            </div>
-          </div>
         ) : null}
-      </section>
     </main>
   );
 }

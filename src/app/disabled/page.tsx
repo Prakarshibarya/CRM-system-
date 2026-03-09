@@ -17,7 +17,7 @@ export default function DisabledPage() {
   return (
     <main className="min-h-screen bg-black text-white overflow-x-hidden">
       <header className="sticky top-0 z-30 border-b border-white/10 bg-black/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3">
+        <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3">
           <div className="text-lg font-semibold">Organizer Onboarding</div>
 
           <nav className="flex rounded-full bg-white/5 p-1">
@@ -38,11 +38,12 @@ export default function DisabledPage() {
         </div>
       </header>
 
-      <section className="mx-auto max-w-6xl px-4 py-6">
+      <section className="mx-auto max-w-7xl px-4 py-6">
         <div className="mb-3 flex items-center justify-between">
           <div className="text-sm font-medium text-white/70">DISABLED LEADS</div>
           <div className="text-sm font-medium text-white/40">{disabledItems.length}</div>
         </div>
+        
 
         <div className="space-y-3">
           {disabledItems.map((item) => (
