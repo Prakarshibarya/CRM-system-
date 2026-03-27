@@ -1,6 +1,6 @@
 "use client";
 
-import type { CRMItem } from "@/lib/store";
+import type { CRMItem } from "@/types/crm";
 
 type Props = {
   item: CRMItem;

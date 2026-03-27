@@ -1,5 +1,5 @@
 "use client";
-
+import { Suspense } from "react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -414,10 +414,10 @@ function NewLeadModal({
   );
 }
 
-/* ------------------ Page ------------------ */
+/* ------------------ Page Inner (uses useSearchParams) ------------------ */
 
-export default function OnboardingPage() {
-  const router = useRouter(); // still used by saveStep → router.push("/active-events")
+function OnboardingPageInner() {
+  const router = useRouter();
   const searchParams = useSearchParams();
 
   const {
@@ -443,7 +443,6 @@ export default function OnboardingPage() {
   const [newLeadOpen, setNewLeadOpen] = useState(false);
   const [creatingLead, setCreatingLead] = useState(false);
 
-  // ✅ FIX 1: Fetch on mount so direct navigation always gets fresh data
   useEffect(() => {
     refreshItems();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -629,10 +628,6 @@ export default function OnboardingPage() {
         },
       });
 
-      // ✅ FIX: trust the optimistic update from addItemToStore.
-      // Don't call refreshItems() here — it races with the DB write and
-      // can wipe the new item before the DB confirms it.
-      // The item is already in the store optimistically; just open it.
       if (created?.id) {
         selectItem(created.id);
       }
@@ -674,7 +669,6 @@ export default function OnboardingPage() {
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
-            {/* Refresh button — consistent style with other pages */}
             <button
               type="button"
               onClick={() => refreshItems()}
@@ -701,7 +695,6 @@ export default function OnboardingPage() {
       </header>
 
       <section className="mx-auto max-w-7xl px-4 py-6">
-        {/* Filters */}
         <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3">
           <input
             value={query}
@@ -736,7 +729,6 @@ export default function OnboardingPage() {
           </select>
         </div>
 
-        {/* ✅ FIX 2: Error banner now has a Retry button */}
         {error && !loading && (
           <div className="mb-4">
             <ErrorBanner message={error} onRetry={refreshItems} />
@@ -745,13 +737,11 @@ export default function OnboardingPage() {
 
         <div className="mb-3 flex items-center justify-between">
           <div className="text-sm font-medium text-white/70">ORGANIZER / EVENT</div>
-          {/* ✅ FIX 4: Show dash while loading */}
           <div className="text-sm font-medium text-white/40">
             {loading ? "—" : `${onboardingItems.length} items`}
           </div>
         </div>
 
-        {/* ✅ FIX 3: Skeleton instead of plain text */}
         {loading ? (
           <LoadingSkeleton />
         ) : (
@@ -799,11 +789,20 @@ export default function OnboardingPage() {
         onClose={() => {
           if (creatingLead) return;
           setNewLeadOpen(false);
-          router.replace("/onboarding");
         }}
         onSave={handleCreateNewLead}
         saving={creatingLead}
       />
     </main>
+  );
+}
+
+/* ------------------ Default Export with Suspense ------------------ */
+
+export default function OnboardingPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-black" />}>
+      <OnboardingPageInner />
+    </Suspense>
   );
 }
