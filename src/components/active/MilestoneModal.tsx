@@ -12,20 +12,13 @@ export type MilestoneKey =
   | "discountFollowUp"
   | "firstSalesUpdate";
 
-export type PromotionPackage = "Platinum" | "Gold" | "Silver" | "Bronze" | "Plus+";
-export type PromotionType = "Regular" | "Bigscale";
-
 export type MilestoneMeta = {
   checked: boolean;
-  updatedAt?: string; // ISO
+  updatedAt?: string;
   comment?: string;
 
   // promo
   promoAccepted?: "Yes" | "No";
-  promoPackage?: PromotionPackage;
-  promoType?: PromotionType;
-  promoPrice?: string;
-  promoImpressions?: string;
 
   // discount
   discountValue?: string;
@@ -35,14 +28,10 @@ export type MilestoneModalResult = {
   key: MilestoneKey;
   checked: true;
   updatedAt: string;
-  comment: string;
+  comment?: string;
 
   // promo
   promoAccepted?: "Yes" | "No";
-  promoPackage?: PromotionPackage;
-  promoType?: PromotionType;
-  promoPrice?: string;
-  promoImpressions?: string;
 
   // discount
   discountValue?: string;
@@ -53,7 +42,6 @@ type Props = {
   milestoneKey: MilestoneKey;
   milestoneLabel: string;
   current?: MilestoneMeta;
-
   onClose: () => void;
   onSave: (result: MilestoneModalResult) => void;
 };
@@ -67,46 +55,50 @@ export default function MilestoneModal({
   onSave,
 }: Props) {
   const [comment, setComment] = useState("");
-
-  // discount
   const [discountValue, setDiscountValue] = useState("");
-
-  // promo
   const [promoAccepted, setPromoAccepted] = useState<"Yes" | "No">("Yes");
-  const [promoPackage, setPromoPackage] = useState<PromotionPackage>("Gold");
-  const [promoType, setPromoType] = useState<PromotionType>("Regular");
-  const [promoPrice, setPromoPrice] = useState("");
-  const [promoImpressions, setPromoImpressions] = useState("");
+  const [errors, setErrors] = useState<{
+    discountValue?: string;
+  }>({});
 
-  const isDiscount = milestoneKey === "discountAsked" || milestoneKey === "discountFollowUp";
-  const isPromo = milestoneKey === "promoCardShared" || milestoneKey === "promoFollowUp";
+  const isDiscount =
+    milestoneKey === "discountAsked" || milestoneKey === "discountFollowUp";
 
-  // Prefill when opening or switching milestone
+  const isPromo =
+    milestoneKey === "promoCardShared" || milestoneKey === "promoFollowUp";
+
   useEffect(() => {
     if (!open) return;
 
     setComment(current?.comment || "");
     setDiscountValue(current?.discountValue || "");
-
     setPromoAccepted(current?.promoAccepted || "Yes");
-    setPromoPackage(current?.promoPackage || "Gold");
-    setPromoType(current?.promoType || "Regular");
-    setPromoPrice(current?.promoPrice || "");
-    setPromoImpressions(current?.promoImpressions || "");
-  }, [open, milestoneKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    setErrors({});
+  }, [open, milestoneKey, current]);
+
+  function isValidNumber(value: string) {
+    return /^\d+(\.\d+)?$/.test(value);
+  }
 
   const canSave = useMemo(() => {
-    if (!comment.trim()) return false;
-
     if (isDiscount) return !!discountValue.trim();
+    return true;
+  }, [discountValue, isDiscount]);
 
-    if (isPromo) {
-      if (promoAccepted === "No") return true;
-      return !!promoPrice.trim() && !!promoImpressions.trim();
+  function validateBeforeSave() {
+    const nextErrors: { discountValue?: string } = {};
+
+    if (isDiscount) {
+      if (!discountValue.trim()) {
+        nextErrors.discountValue = "Discount value is required.";
+      } else if (!isValidNumber(discountValue.trim())) {
+        nextErrors.discountValue = "Enter numbers only.";
+      }
     }
 
-    return true;
-  }, [comment, discountValue, isDiscount, isPromo, promoAccepted, promoPrice, promoImpressions]);
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  }
 
   if (!open) return null;
 
@@ -125,7 +117,7 @@ export default function MilestoneModal({
           <div>
             <div className="text-lg font-semibold">{milestoneLabel}</div>
             <div className="mt-1 text-sm text-white/50">
-              Save captures timestamp + comment.
+              Saving this action stores the timestamp automatically.
             </div>
           </div>
 
@@ -139,8 +131,7 @@ export default function MilestoneModal({
         </div>
 
         <div className="mt-4 space-y-4">
-          {/* Promo section */}
-          {isPromo && (
+          {isPromo ? (
             <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4">
               <div className="text-sm font-medium text-white/70">
                 Promotion accepted?
@@ -173,80 +164,52 @@ export default function MilestoneModal({
                   No
                 </button>
               </div>
-
-              {promoAccepted === "Yes" && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div>
-                    <div className="text-sm text-white/60">Package</div>
-                    <select
-                      value={promoPackage}
-                      onChange={(e) => setPromoPackage(e.target.value as PromotionPackage)}
-                      className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
-                    >
-                      <option value="Platinum">Platinum</option>
-                      <option value="Gold">Gold</option>
-                      <option value="Silver">Silver</option>
-                      <option value="Bronze">Bronze</option>
-                      <option value="Plus+">Plus+</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <div className="text-sm text-white/60">Type</div>
-                    <select
-                      value={promoType}
-                      onChange={(e) => setPromoType(e.target.value as PromotionType)}
-                      className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
-                    >
-                      <option value="Regular">Regular</option>
-                      <option value="Bigscale">Bigscale</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <div className="text-sm text-white/60">Price</div>
-                    <input
-                      value={promoPrice}
-                      onChange={(e) => setPromoPrice(e.target.value)}
-                      placeholder="e.g., 25000"
-                      className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="text-sm text-white/60">Impressions</div>
-                    <input
-                      value={promoImpressions}
-                      onChange={(e) => setPromoImpressions(e.target.value)}
-                      placeholder="e.g., 50000"
-                      className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
-                    />
-                  </div>
-                </div>
-              )}
             </div>
-          )}
+          ) : null}
 
-          {/* Discount section */}
-          {isDiscount && (
+          {isDiscount ? (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-sm font-medium text-white/70">Discount value</div>
+              <div className="text-sm font-medium text-white/70">
+                Discount value
+              </div>
               <input
                 value={discountValue}
-                onChange={(e) => setDiscountValue(e.target.value)}
-                placeholder="e.g., 15% or 200 off"
-                className="mt-2 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
+                onChange={(e) => {
+                  setDiscountValue(e.target.value);
+                  if (errors.discountValue) {
+                    setErrors((prev) => ({
+                      ...prev,
+                      discountValue: undefined,
+                    }));
+                  }
+                }}
+                placeholder="e.g. 15"
+                className={`mt-2 w-full rounded-xl border bg-black/40 px-3 py-2 text-sm ${
+                  errors.discountValue ? "border-red-500/60" : "border-white/10"
+                }`}
               />
+              {errors.discountValue ? (
+                <div className="mt-1 text-xs text-red-400">
+                  {errors.discountValue}
+                </div>
+              ) : null}
             </div>
-          )}
+          ) : null}
 
-          {/* Comments (always required) */}
+          {!isPromo && !isDiscount ? (
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+              Mark this milestone as completed. The action time will be stored automatically.
+            </div>
+          ) : null}
+
           <div>
-            <div className="text-sm font-medium text-white/70">Comments</div>
+            <div className="text-sm font-medium text-white/70">
+              Comments (optional)
+            </div>
             <textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder="Write what the organizer said..."
+              placeholder="Add a note only if needed"
               className="mt-2 h-28 w-full resize-none rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-white/20"
             />
           </div>
@@ -266,27 +229,17 @@ export default function MilestoneModal({
             disabled={!canSave}
             className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-white/90 disabled:opacity-40"
             onClick={() => {
+              if (!validateBeforeSave()) return;
+
               const now = new Date().toISOString();
 
               onSave({
                 key: milestoneKey,
                 checked: true,
                 updatedAt: now,
-                comment: comment.trim(),
-
+                ...(comment.trim() ? { comment: comment.trim() } : {}),
                 ...(isDiscount ? { discountValue: discountValue.trim() } : {}),
-
-                ...(isPromo
-                  ? promoAccepted === "No"
-                    ? { promoAccepted: "No" as const }
-                    : {
-                        promoAccepted: "Yes" as const,
-                        promoPackage,
-                        promoType,
-                        promoPrice: promoPrice.trim(),
-                        promoImpressions: promoImpressions.trim(),
-                      }
-                  : {}),
+                ...(isPromo ? { promoAccepted } : {}),
               });
 
               onClose();

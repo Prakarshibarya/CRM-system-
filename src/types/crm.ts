@@ -43,25 +43,12 @@ export type MilestoneKey =
   | "discountFollowUp"
   | "firstSalesUpdate";
 
-export type PromotionPackage =
-  | "Platinum"
-  | "Gold"
-  | "Silver"
-  | "Bronze"
-  | "Plus+";
-
-export type PromotionType = "Regular" | "Bigscale";
-
 export type ActiveMeta = StepMeta & {
   // discount
   discountValue?: string;
 
   // promotion
   promoAccepted?: "Yes" | "No";
-  promoPackage?: PromotionPackage;
-  promoType?: PromotionType;
-  promoPrice?: string;
-  promoImpressions?: string;
 };
 
 /* ---------- CRM Item ---------- */
@@ -80,6 +67,9 @@ export type CRMItem = {
   city?: string;
   venue?: string;
   eventLink?: string;
+  startDate?: string;
+  endDate?: string;
+  sourceType?: "Venue" | "Organizer";
 
   manager: string;
 

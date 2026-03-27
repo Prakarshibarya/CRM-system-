@@ -16,7 +16,7 @@ enum LeadStatus {
 }
 
 model Organizer {
-  id        String   @id @default(cuid())
+  id        String   @id
   name      String
   email     String?  @unique
   phone     String?
@@ -68,7 +68,7 @@ enum Stage {
 }
 
 model CrmItem {
-  id          String @id @default(cuid())
+  id          String @id
   organizerId String
 
   title     String
@@ -77,12 +77,16 @@ model CrmItem {
   manager   String
   stage     Stage  @default(ONBOARDING)
 
-  // optional lead/event details
   orgName   String?
   eventName String?
   city      String?
   venue     String?
   eventLink String?
+
+  // ✅ NEW fields — run: npx prisma migrate dev --name add_date_source_fields
+  startDate  String?
+  endDate    String?
+  sourceType String?
 
   disabled       Boolean   @default(false)
   disabledReason String?

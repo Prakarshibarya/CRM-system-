@@ -1,32 +1,11 @@
-export type Stage = "ONBOARDING" | "ACTIVE";
+import type { CRMItem } from "@/types/crm";
 
-export type CRMItem = {
-  id: string;
-  title: string;
-  platform: string;
-  eventType: string;
-  manager: string;
-
-  stage: Stage;
-
-  // ✅ optional lead/event details
-  orgName?: string;
-  eventName?: string;
-  city?: string;
-  venue?: string;
-  eventLink?: string;
-
-  disabled?: boolean;
-  disabledReason?: string;
-  disabledAt?: string;
-
-  onboarding: Record<string, any>;
-  active: Record<string, any>;
-
-  activity: { at: string; text: string }[];
-};
-
-
+/* ============================================================
+   localStorage helpers
+   — used by useCRMStore for local caching and fallback only
+   — DO NOT import addItem or updateItem from here in UI code
+   — always go through useCRMStore for mutations
+============================================================ */
 
 const KEY = "ha_crm_items_v1";
 
@@ -49,63 +28,29 @@ export function seedIfEmpty(seed: CRMItem[]) {
   const items = loadItems();
   if (items.length === 0) saveItems(seed);
 }
-export function addItem(item: CRMItem) {
-  const items = loadItems();
-  const next = [item, ...items];
-  saveItems(next);
-  return next;
-}
-
-export function updateItem(updated: CRMItem) {
-  const items = loadItems();
-  const next = items.map((i) => (i.id === updated.id ? updated : i));
-  saveItems(next);
-  return next;
-}
 
 export function generateId(prefix = "item") {
   return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now()}`;
 }
-// export async function loadItemsFromDB(organizerId: string): Promise<CRMItem[]> {
-//   const res = await fetch(`/api/items?organizerId=${encodeURIComponent(organizerId)}`, {
-//     cache: "no-store",
-//   });
-//   if (!res.ok) throw new Error(`Failed to load items: ${res.status}`);
-//   const data = await res.json();
-//   return data.items as CRMItem[];
-// }
 
-// export async function createItemInDB(item: CRMItem, organizerId: string) {
-//   const res = await fetch(`/api/items`, {
-//     method: "POST",
-//     headers: { "Content-Type": "application/json" },
-//     body: JSON.stringify({ ...item, organizerId }),
-//   });
-//   if (!res.ok) throw new Error(`Failed to create item: ${res.status}`);
-//   const data = await res.json();
-//   return data.item as CRMItem;
-// }
+/* ============================================================
+   DB functions — called only from useCRMStore, never from UI
+============================================================ */
 
-// export async function updateItemInDB(item: CRMItem) {
-//   const res = await fetch(`/api/items/${item.id}`, {
-//     method: "PATCH",
-//     headers: { "Content-Type": "application/json" },
-//     body: JSON.stringify(item),
-//   });
-//   if (!res.ok) throw new Error(`Failed to update item: ${res.status}`);
-//   const data = await res.json();
-//   return data.item as CRMItem;
-// }
 export async function loadItemsFromDB(organizerId: string): Promise<CRMItem[]> {
-  const res = await fetch(`/api/items?organizerId=${encodeURIComponent(organizerId)}`, {
-    cache: "no-store",
-  });
+  const res = await fetch(
+    `/api/items?organizerId=${encodeURIComponent(organizerId)}`,
+    { cache: "no-store" }
+  );
   if (!res.ok) throw new Error(`Failed to load items: ${res.status}`);
   const data = await res.json();
   return data.items as CRMItem[];
 }
 
-export async function createItemInDB(organizerId: string, item: CRMItem): Promise<CRMItem> {
+export async function createItemInDB(
+  organizerId: string,
+  item: CRMItem
+): Promise<CRMItem> {
   const res = await fetch(`/api/items`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -127,7 +72,7 @@ export async function updateItemInDB(item: CRMItem): Promise<CRMItem> {
   return data.item as CRMItem;
 }
 
-export async function deleteItemInDB(id: string) {
+export async function deleteItemInDB(id: string): Promise<void> {
   const res = await fetch(`/api/items/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`Failed to delete item: ${res.status}`);
 }

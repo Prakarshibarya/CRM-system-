@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-
+import { notifySlack } from "@/lib/notifySlack";
 import OnboardingCard from "../../components/onboarding/OnboardingCard";
 import OnboardingStepModal, {
   type OnboardingKey,
@@ -13,10 +13,6 @@ import { SidebarDrawer } from "../../components/layout/Sidebardrawer";
 
 import { useCRMStore } from "@/hooks/useCRMStore";
 import type { CRMItem } from "@/types/crm";
-import {
-  saveItems,
-  updateItemInDB,
-} from "../../lib/store";
 
 /* ------------------ Filters ------------------ */
 
@@ -42,6 +38,44 @@ function matchesQuery(item: CRMItem, q: string) {
     .includes(needle);
 }
 
+/* ------------------ Loading Skeleton ------------------ */
+
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-4">
+      {[...Array(4)].map((_, i) => (
+        <div
+          key={i}
+          className="h-24 w-full animate-pulse rounded-2xl border border-white/10 bg-white/5"
+        />
+      ))}
+    </div>
+  );
+}
+
+/* ------------------ Error Banner ------------------ */
+
+function ErrorBanner({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+      <span>⚠ {message}</span>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="ml-4 rounded-lg bg-red-500/20 px-3 py-1 text-xs font-medium text-red-300 hover:bg-red-500/30"
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
+
 /* ------------------ New Lead Modal ------------------ */
 
 function Field({
@@ -63,6 +97,7 @@ function NewLeadModal({
   open,
   onClose,
   onSave,
+  saving = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -76,7 +111,11 @@ function NewLeadModal({
     city?: string;
     venue?: string;
     eventLink?: string;
+    startDate?: string;
+    endDate?: string;
+    sourceType?: "Venue" | "Organizer";
   }) => Promise<void> | void;
+  saving?: boolean;
 }) {
   const [title, setTitle] = useState("");
   const [platform, setPlatform] = useState<
@@ -90,23 +129,74 @@ function NewLeadModal({
   const [city, setCity] = useState("");
   const [venue, setVenue] = useState("");
   const [eventLink, setEventLink] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [sourceType, setSourceType] = useState<"Venue" | "Organizer">("Organizer");
+
+  const [errors, setErrors] = useState<{
+    title?: string;
+    manager?: string;
+    eventLink?: string;
+    endDate?: string;
+  }>({});
 
   useEffect(() => {
     if (!open) return;
     setTitle("");
     setPlatform("Other");
-    setEventType("Other");
-    setManager("JD");
+    setEventType("");
+    setManager("");
     setOrgName("");
     setEventName("");
     setCity("");
     setVenue("");
     setEventLink("");
+    setStartDate("");
+    setEndDate("");
+    setSourceType("Organizer");
+    setErrors({});
   }, [open]);
 
   if (!open) return null;
 
-  const canSave = title.trim().length > 2 && manager.trim().length > 0;
+  function isValidUrl(value: string) {
+    try {
+      new URL(value);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function validateForm() {
+    const nextErrors: {
+      title?: string;
+      manager?: string;
+      eventLink?: string;
+      endDate?: string;
+    } = {};
+
+    if (!title.trim()) nextErrors.title = "Title is required.";
+    if (!manager.trim()) nextErrors.manager = "Account manager is required.";
+
+    if (!eventLink.trim()) {
+      nextErrors.eventLink = "Event link is required.";
+    } else if (!isValidUrl(eventLink.trim())) {
+      nextErrors.eventLink = "Enter a valid URL.";
+    }
+
+    if (startDate && endDate && endDate < startDate) {
+      nextErrors.endDate = "End date cannot be before start date.";
+    }
+
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  }
+
+  const canSave =
+    title.trim().length > 0 &&
+    manager.trim().length > 0 &&
+    eventLink.trim().length > 0;
 
   return (
     <div
@@ -140,11 +230,19 @@ function NewLeadModal({
             <Field label="Title (required)">
               <input
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  if (errors.title) setErrors((p) => ({ ...p, title: undefined }));
+                }}
                 placeholder="e.g., Sunburn Goa — EDM Night"
-                className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
+                className={`w-full rounded-xl border bg-black/40 px-3 py-2 text-sm ${
+                  errors.title ? "border-red-500/60" : "border-white/10"
+                }`}
               />
             </Field>
+            {errors.title && (
+              <div className="mt-1 text-xs text-red-400">{errors.title}</div>
+            )}
           </div>
 
           <Field label="Platform">
@@ -169,14 +267,24 @@ function NewLeadModal({
             />
           </Field>
 
-          <Field label="Account Manager (required)">
-            <input
-              value={manager}
-              onChange={(e) => setManager(e.target.value)}
-              placeholder="e.g., JD"
-              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
-            />
-          </Field>
+          <div>
+            <Field label="Account Manager (required)">
+              <input
+                value={manager}
+                onChange={(e) => {
+                  setManager(e.target.value);
+                  if (errors.manager) setErrors((p) => ({ ...p, manager: undefined }));
+                }}
+                placeholder="e.g., JD"
+                className={`w-full rounded-xl border bg-black/40 px-3 py-2 text-sm ${
+                  errors.manager ? "border-red-500/60" : "border-white/10"
+                }`}
+              />
+            </Field>
+            {errors.manager && (
+              <div className="mt-1 text-xs text-red-400">{errors.manager}</div>
+            )}
+          </div>
 
           <Field label="Organizer Name">
             <input
@@ -187,13 +295,46 @@ function NewLeadModal({
             />
           </Field>
 
-          <Field label="Event Name">
+          <Field label="Start Date">
             <input
-              value={eventName}
-              onChange={(e) => setEventName(e.target.value)}
-              placeholder="e.g., Winter Carnival"
+              type="date"
+              value={startDate}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                if (errors.endDate) setErrors((p) => ({ ...p, endDate: undefined }));
+              }}
               className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
             />
+          </Field>
+
+          <div>
+            <Field label="End Date">
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => {
+                  setEndDate(e.target.value);
+                  if (errors.endDate) setErrors((p) => ({ ...p, endDate: undefined }));
+                }}
+                className={`w-full rounded-xl border bg-black/40 px-3 py-2 text-sm ${
+                  errors.endDate ? "border-red-500/60" : "border-white/10"
+                }`}
+              />
+            </Field>
+            {errors.endDate && (
+              <div className="mt-1 text-xs text-red-400">{errors.endDate}</div>
+            )}
+          </div>
+
+          <Field label="Source Type">
+            <select
+              value={sourceType}
+              onChange={(e) => setSourceType(e.target.value as "Venue" | "Organizer")}
+              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
+            >
+              <option value="Organizer">Organizer</option>
+              <option value="Venue">Venue</option>
+            </select>
           </Field>
 
           <Field label="City">
@@ -215,14 +356,22 @@ function NewLeadModal({
           </Field>
 
           <div className="sm:col-span-2">
-            <Field label="Event Link">
+            <Field label="Event Link (required)">
               <input
                 value={eventLink}
-                onChange={(e) => setEventLink(e.target.value)}
+                onChange={(e) => {
+                  setEventLink(e.target.value);
+                  if (errors.eventLink) setErrors((p) => ({ ...p, eventLink: undefined }));
+                }}
                 placeholder="https://..."
-                className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
+                className={`w-full rounded-xl border bg-black/40 px-3 py-2 text-sm ${
+                  errors.eventLink ? "border-red-500/60" : "border-white/10"
+                }`}
               />
             </Field>
+            {errors.eventLink && (
+              <div className="mt-1 text-xs text-red-400">{errors.eventLink}</div>
+            )}
           </div>
         </div>
 
@@ -230,29 +379,34 @@ function NewLeadModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl bg-white/5 px-4 py-2 text-sm text-white/70 hover:bg-white/10"
+            disabled={saving}
+            className="rounded-xl bg-white/5 px-4 py-2 text-sm text-white/70 hover:bg-white/10 disabled:opacity-40"
           >
             Cancel
           </button>
           <button
             type="button"
-            disabled={!canSave}
-            onClick={() =>
+            disabled={!canSave || saving}
+            onClick={() => {
+              if (!validateForm()) return;
               onSave({
                 title: title.trim(),
                 platform,
                 eventType: eventType.trim() || "Other",
-                manager: manager.trim() || "JD",
+                manager: manager.trim(),
                 orgName: orgName.trim() || undefined,
                 eventName: eventName.trim() || undefined,
                 city: city.trim() || undefined,
                 venue: venue.trim() || undefined,
-                eventLink: eventLink.trim() || undefined,
-              })
-            }
+                eventLink: eventLink.trim(),
+                startDate: startDate || undefined,
+                endDate: endDate || undefined,
+                sourceType,
+              });
+            }}
             className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-white/90 disabled:opacity-40"
           >
-            Save Lead
+            {saving ? "Saving..." : "Save Lead"}
           </button>
         </div>
       </div>
@@ -263,13 +417,16 @@ function NewLeadModal({
 /* ------------------ Page ------------------ */
 
 export default function OnboardingPage() {
-  const router = useRouter();
+  const router = useRouter(); // still used by saveStep → router.push("/active-events")
   const searchParams = useSearchParams();
 
   const {
     items,
     selected,
     selectItem,
+    loading,
+    error,
+    refreshItems,
     addItem: addItemToStore,
     updateItem: updateItemInStore,
   } = useCRMStore();
@@ -284,6 +441,13 @@ export default function OnboardingPage() {
   const [modalCurrent, setModalCurrent] = useState<OnboardingMeta | undefined>(undefined);
 
   const [newLeadOpen, setNewLeadOpen] = useState(false);
+  const [creatingLead, setCreatingLead] = useState(false);
+
+  // ✅ FIX 1: Fetch on mount so direct navigation always gets fresh data
+  useEffect(() => {
+    refreshItems();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const v = searchParams.get("new");
@@ -366,10 +530,30 @@ export default function OnboardingPage() {
       ],
     };
 
-    updateItemInStore(updatedItem);
-
     try {
-      await updateItemInDB(updatedItem);
+      await updateItemInStore(updatedItem);
+      await notifySlack({
+        event: "onboarding_step_completed",
+        item: {
+          title: updatedItem.title,
+          orgName: updatedItem.orgName,
+          eventName: updatedItem.eventName,
+          manager: updatedItem.manager,
+          platform: updatedItem.platform,
+          city: updatedItem.city,
+          venue: updatedItem.venue,
+          startDate: updatedItem.startDate,
+          endDate: updatedItem.endDate,
+          sourceType: updatedItem.sourceType,
+        },
+        stepName: label,
+        extra:
+          modalKey === "commissionSettled"
+            ? { "Commission Value": meta.commissionValue }
+            : modalKey === "partnerCreated"
+            ? { "Partner Email": meta.partnerEmail }
+            : {},
+      });
       if (allDone) router.push("/active-events");
     } catch (e) {
       console.error("Failed to persist onboarding step:", e);
@@ -386,44 +570,77 @@ export default function OnboardingPage() {
     city?: string;
     venue?: string;
     eventLink?: string;
+    startDate?: string;
+    endDate?: string;
+    sourceType?: "Venue" | "Organizer";
   }) {
-    const onboardingDefaults = {
-      contactDetails: { checked: false },
-      commissionSettled: { checked: false },
-      partnerCreated: { checked: false },
-    };
+    try {
+      setCreatingLead(true);
 
-    const activeDefaults = {
-      orgVerified: { checked: false },
-      discountAsked: { checked: false },
-      promoCardShared: { checked: false },
-      mysiteMade: { checked: false },
-      mysiteGiven: { checked: false },
-      promoFollowUp: { checked: false },
-      discountFollowUp: { checked: false },
-      firstSalesUpdate: { checked: false },
-    };
+      const onboardingDefaults = {
+        contactDetails: { checked: false },
+        commissionSettled: { checked: false },
+        partnerCreated: { checked: false },
+      };
 
-    const created = await addItemToStore({
-      title: payload.title,
-      platform: payload.platform,
-      eventType: payload.eventType,
-      manager: payload.manager,
-      stage: "ONBOARDING",
-      orgName: payload.orgName,
-      eventName: payload.eventName,
-      city: payload.city,
-      venue: payload.venue,
-      eventLink: payload.eventLink,
-      onboarding: onboardingDefaults as any,
-      active: activeDefaults as any,
-      disabled: false,
-    } as any);
+      const activeDefaults = {
+        orgVerified: { checked: false },
+        discountAsked: { checked: false },
+        promoCardShared: { checked: false },
+        mysiteMade: { checked: false },
+        mysiteGiven: { checked: false },
+        promoFollowUp: { checked: false },
+        discountFollowUp: { checked: false },
+        firstSalesUpdate: { checked: false },
+      };
 
-    if (created?.id) selectItem(created.id);
+      const created = await addItemToStore({
+        title: payload.title,
+        platform: payload.platform,
+        eventType: payload.eventType,
+        manager: payload.manager,
+        stage: "ONBOARDING",
+        orgName: payload.orgName,
+        eventName: payload.eventName,
+        city: payload.city,
+        venue: payload.venue,
+        eventLink: payload.eventLink,
+        startDate: payload.startDate,
+        endDate: payload.endDate,
+        sourceType: payload.sourceType,
+        onboarding: onboardingDefaults as any,
+        active: activeDefaults as any,
+        disabled: false,
+      } as any);
 
-    setNewLeadOpen(false);
-    router.replace("/onboarding");
+      await notifySlack({
+        event: "lead_created",
+        item: {
+          title: payload.title,
+          orgName: payload.orgName,
+          eventName: payload.eventName,
+          manager: payload.manager,
+          platform: payload.platform,
+          city: payload.city,
+          venue: payload.venue,
+          startDate: payload.startDate,
+          endDate: payload.endDate,
+          sourceType: payload.sourceType,
+        },
+      });
+
+      // ✅ FIX: trust the optimistic update from addItemToStore.
+      // Don't call refreshItems() here — it races with the DB write and
+      // can wipe the new item before the DB confirms it.
+      // The item is already in the store optimistically; just open it.
+      if (created?.id) {
+        selectItem(created.id);
+      }
+
+      setNewLeadOpen(false);
+    } finally {
+      setCreatingLead(false);
+    }
   }
 
   return (
@@ -433,10 +650,7 @@ export default function OnboardingPage() {
           <div className="text-lg font-semibold">Organizer Onboarding</div>
 
           <nav className="flex rounded-full bg-white/5 p-1">
-            <Link
-              href="/onboarding"
-              className="rounded-full bg-white/10 px-3 py-1 text-sm"
-            >
+            <Link href="/onboarding" className="rounded-full bg-white/10 px-3 py-1 text-sm">
               Onboarding
             </Link>
             <Link
@@ -451,9 +665,26 @@ export default function OnboardingPage() {
             >
               Disabled
             </Link>
+            <Link
+              href="/expired-events"
+              className="rounded-full px-3 py-1 text-sm text-white/60 hover:text-white"
+            >
+              Expired Events
+            </Link>
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
+            {/* Refresh button — consistent style with other pages */}
+            <button
+              type="button"
+              onClick={() => refreshItems()}
+              disabled={loading}
+              className="rounded-full bg-white/5 px-3 py-2 text-xs text-white/50 hover:bg-white/10 disabled:opacity-40"
+              title="Refresh"
+            >
+              {loading ? "↻ Loading..." : "↻ Refresh"}
+            </button>
+
             <button
               type="button"
               className="rounded-full bg-gradient-to-r from-fuchsia-500 to-purple-500 px-4 py-2 text-sm font-medium"
@@ -470,17 +701,19 @@ export default function OnboardingPage() {
       </header>
 
       <section className="mx-auto max-w-7xl px-4 py-6">
+        {/* Filters */}
         <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3">
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Organizer / Event / City"
             className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-white/40"
-            />
+          />
+
           <select
             value={platformFilter}
             onChange={(e) => setPlatformFilter(e.target.value as PlatformFilter)}
-            className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-white/40"
+            className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white"
           >
             <option value="All">All platforms</option>
             <option value="BookMyShow">BookMyShow</option>
@@ -492,7 +725,7 @@ export default function OnboardingPage() {
           <select
             value={managerFilter}
             onChange={(e) => setManagerFilter(e.target.value)}
-            className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-white/40"
+            className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white"
           >
             <option value="All">All managers</option>
             {managers.map((m) => (
@@ -503,27 +736,42 @@ export default function OnboardingPage() {
           </select>
         </div>
 
+        {/* ✅ FIX 2: Error banner now has a Retry button */}
+        {error && !loading && (
+          <div className="mb-4">
+            <ErrorBanner message={error} onRetry={refreshItems} />
+          </div>
+        )}
+
         <div className="mb-3 flex items-center justify-between">
           <div className="text-sm font-medium text-white/70">ORGANIZER / EVENT</div>
-          <div className="text-sm font-medium text-white/40">ONBOARDING CHECKLIST</div>
+          {/* ✅ FIX 4: Show dash while loading */}
+          <div className="text-sm font-medium text-white/40">
+            {loading ? "—" : `${onboardingItems.length} items`}
+          </div>
         </div>
 
-        <div className="space-y-4">
-          {onboardingItems.map((item) => (
-            <OnboardingCard
-              key={item.id}
-              item={item}
-              onOpen={openDrawer}
-              onStepClick={openStep}
-            />
-          ))}
+        {/* ✅ FIX 3: Skeleton instead of plain text */}
+        {loading ? (
+          <LoadingSkeleton />
+        ) : (
+          <div className="space-y-4">
+            {onboardingItems.map((item) => (
+              <OnboardingCard
+                key={item.id}
+                item={item}
+                onOpen={openDrawer}
+                onStepClick={openStep}
+              />
+            ))}
 
-          {onboardingItems.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-white/60">
-              No items in Onboarding. Create a new lead to start.
-            </div>
-          ) : null}
-        </div>
+            {onboardingItems.length === 0 && !error && (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-white/60">
+                No items in Onboarding. Create a new lead to start.
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       <OnboardingStepModal
@@ -541,19 +789,20 @@ export default function OnboardingPage() {
         open={!!selected}
         item={selected}
         onClose={closeDrawer}
-        onUpdated={(updatedItem) => {
-          const next = items.map((x) => (x.id === updatedItem.id ? updatedItem : x));
-          saveItems(next);
+        onUpdated={async (updatedItem) => {
+          await updateItemInStore(updatedItem);
         }}
       />
 
       <NewLeadModal
         open={newLeadOpen}
         onClose={() => {
+          if (creatingLead) return;
           setNewLeadOpen(false);
           router.replace("/onboarding");
         }}
         onSave={handleCreateNewLead}
+        saving={creatingLead}
       />
     </main>
   );

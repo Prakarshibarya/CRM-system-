@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useUser } from "@clerk/nextjs";
 import {
   loadItems,
   saveItems,
@@ -10,23 +11,35 @@ import {
   createItemInDB,
   updateItemInDB,
 } from "@/lib/store";
-import { getOrganizerId } from "@/lib/session";
 
 import type { CRMItem, Stage, ActivityItem } from "@/types/crm";
 
 /* =========================================
-   useCRMStore (DB-backed, matches store.ts)
+   useCRMStore (Clerk-authenticated, DB-backed)
 ========================================= */
 
 export function useCRMStore() {
+  const { user, isLoaded } = useUser();
+
   const [items, setItems] = useState<CRMItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   function nowISO() {
     return new Date().toISOString();
   }
 
-  function persist(next: CRMItem[]) {
+  // ✅ organizerId is always the real Clerk user id
+  function getOrganizerId(): string | null {
+    return user?.id ?? null;
+  }
+
+  function setItemsState(next: CRMItem[]) {
+    setItems(next);
+  }
+
+  function syncLocal(next: CRMItem[]) {
     setItems(next);
     saveItems(next);
   }
@@ -36,36 +49,59 @@ export function useCRMStore() {
     return { ...item, activity: [activity, ...(item.activity || [])] };
   }
 
-  /* ---------- initial load (DB -> local fallback) ---------- */
-  useEffect(() => {
-    seedIfEmpty([]);
-    const organizerId = getOrganizerId() ?? "test123";
+  async function fetchItemsFromSource() {
+    const organizerId = getOrganizerId();
 
-    (async () => {
-      try {
-        const dbItems = await loadItemsFromDB(organizerId);
-        if (Array.isArray(dbItems)) {
-          persist(dbItems);
-          return;
-        }
-        setItems(loadItems());
-      } catch {
-        setItems(loadItems());
+    // ✅ Don't fetch until Clerk has loaded the user
+    if (!isLoaded || !organizerId) {
+      setLoading(false);
+      return [];
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const dbItems = await loadItemsFromDB(organizerId);
+
+      if (Array.isArray(dbItems)) {
+        syncLocal(dbItems);
+        return dbItems;
       }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
-  /* ---------- derived ---------- */
+      const local = loadItems();
+      setItemsState(local);
+      return local;
+    } catch {
+      const local = loadItems();
+      setItemsState(local);
+      setError("Failed to load from database. Showing local data.");
+      return local;
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ✅ Fetch when Clerk finishes loading (not before — user id isn't ready yet)
+  useEffect(() => {
+    if (!isLoaded) return;
+    seedIfEmpty([]);
+    fetchItemsFromSource();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, user?.id]);
+
+  async function refreshItems() {
+    return fetchItemsFromSource();
+  }
+
   const selected = useMemo(
     () => items.find((i) => i.id === selectedId) || null,
     [items, selectedId]
   );
 
-  /* ---------- CRUD ---------- */
-
   async function addItem(input: Omit<CRMItem, "id" | "activity">) {
-    const organizerId = getOrganizerId() ?? "test123";
+    const organizerId = getOrganizerId();
+    if (!organizerId) throw new Error("Not authenticated");
 
     const localItem: CRMItem = {
       ...input,
@@ -73,46 +109,43 @@ export function useCRMStore() {
       activity: [{ at: nowISO(), text: "Lead created" }],
     };
 
-    // optimistic UI
-    const nextLocal = [localItem, ...items];
-    persist(nextLocal);
+    const optimistic = [localItem, ...items];
+    syncLocal(optimistic);
     setSelectedId(localItem.id);
 
     try {
-      // ✅ matches: createItemInDB(organizerId, item)
       const created = await createItemInDB(organizerId, localItem);
 
       if (created?.id) {
-        const replaced = nextLocal.map((i) => (i.id === localItem.id ? created : i));
-        persist(replaced);
+        const replaced = optimistic.map((i) =>
+          i.id === localItem.id ? created : i
+        );
+        syncLocal(replaced);
         setSelectedId(created.id);
         return created as CRMItem;
       }
     } catch {
-      // keep local if DB fails
+      // keep optimistic
     }
 
     return localItem;
   }
 
- async function updateItem(updated: CRMItem, activityText?: string) {
-  const finalItem = activityText ? withActivity(updated, activityText) : updated;
+  async function updateItem(updated: CRMItem, activityText?: string) {
+    const finalItem = activityText ? withActivity(updated, activityText) : updated;
 
-  // optimistic UI
-  const optimistic = items.map((i) => (i.id === finalItem.id ? finalItem : i));
-  persist(optimistic);
+    const optimistic = items.map((i) => (i.id === finalItem.id ? finalItem : i));
+    syncLocal(optimistic);
 
-  try {
-    const saved = await updateItemInDB(finalItem); // ✅ WAIT for DB
-    const next = optimistic.map((i) => (i.id === saved.id ? saved : i));
-    persist(next);
-    return saved;
-  } catch (e) {
-    // keep optimistic if DB fails
-    return finalItem;
+    try {
+      const saved = await updateItemInDB(finalItem);
+      const confirmed = optimistic.map((i) => (i.id === saved.id ? saved : i));
+      syncLocal(confirmed);
+      return saved;
+    } catch {
+      return finalItem;
+    }
   }
-}
-
 
   function disableItem(itemId: string, reason: string) {
     const item = items.find((i) => i.id === itemId);
@@ -150,7 +183,9 @@ export function useCRMStore() {
     selected,
     selectedId,
     selectItem,
-
+    loading,
+    error,
+    refreshItems,
     addItem,
     updateItem,
     disableItem,

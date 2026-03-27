@@ -2,7 +2,7 @@
 
 import LeadCard from "@/components/lead/LeadCard";
 import OnboardingSteps from "@/components/onboarding/OnboardingSteps";
-import type { CRMItem } from "@/lib/store";
+import type { CRMItem } from "@/types/crm";
 import type { OnboardingKey } from "@/components/onboarding/types";
 
 type Props = {

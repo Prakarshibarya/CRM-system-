@@ -11,7 +11,6 @@ export type OnboardingMeta = {
   checked: boolean;
   updatedAt?: string;
   comment?: string;
-
   commissionValue?: string;
   partnerEmail?: string;
 };
@@ -41,7 +40,7 @@ function ModalShell({
       aria-modal="true"
     >
       <div
-        className="w-full max-w-xl rounded-2xl border border-white/10 bg-[#0B0B10] shadow-2xl p-5"
+        className="w-full max-w-xl rounded-2xl border border-white/10 bg-[#0B0B10] p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
@@ -73,11 +72,13 @@ function LabeledInput({
   value,
   onChange,
   placeholder,
+  error,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  error?: string;
 }) {
   return (
     <div>
@@ -86,8 +87,11 @@ function LabeledInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="mt-2 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-white/20"
+        className={`mt-2 w-full rounded-xl border bg-black/40 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-white/20 ${
+          error ? "border-red-500/60" : "border-white/10"
+        }`}
       />
+      {error ? <div className="mt-1 text-xs text-red-400">{error}</div> : null}
     </div>
   );
 }
@@ -108,12 +112,17 @@ export default function OnboardingStepModal({
   const [comment, setComment] = useState("");
   const [commissionValue, setCommissionValue] = useState("");
   const [partnerEmail, setPartnerEmail] = useState("");
+  const [errors, setErrors] = useState<{
+    commissionValue?: string;
+    partnerEmail?: string;
+  }>({});
 
   useEffect(() => {
     if (!open) return;
     setComment(current?.comment || "");
     setCommissionValue(current?.commissionValue || "");
     setPartnerEmail(current?.partnerEmail || "");
+    setErrors({});
   }, [open, current]);
 
   const title =
@@ -123,18 +132,51 @@ export default function OnboardingStepModal({
       ? "Commission settled"
       : "Partner created";
 
+  function isValidEmail(value: string) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  }
+
+  function isValidNumber(value: string) {
+    return /^\d+(\.\d+)?$/.test(value);
+  }
+
   const canSave = useMemo(() => {
-    if (!comment.trim()) return false;
     if (stepKey === "commissionSettled") return !!commissionValue.trim();
     if (stepKey === "partnerCreated") return !!partnerEmail.trim();
     return true;
-  }, [comment, commissionValue, partnerEmail, stepKey]);
+  }, [commissionValue, partnerEmail, stepKey]);
+
+  function validateBeforeSave() {
+    const nextErrors: {
+      commissionValue?: string;
+      partnerEmail?: string;
+    } = {};
+
+    if (stepKey === "commissionSettled") {
+      if (!commissionValue.trim()) {
+        nextErrors.commissionValue = "Commission value is required.";
+      } else if (!isValidNumber(commissionValue.trim())) {
+        nextErrors.commissionValue = "Enter numbers only.";
+      }
+    }
+
+    if (stepKey === "partnerCreated") {
+      if (!partnerEmail.trim()) {
+        nextErrors.partnerEmail = "Partner email is required.";
+      } else if (!isValidEmail(partnerEmail.trim())) {
+        nextErrors.partnerEmail = "Enter a valid email address.";
+      }
+    }
+
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  }
 
   return (
     <ModalShell
       open={open}
       title={title}
-      subtitle="Save captures timestamp + comments"
+      subtitle="Saving this action stores the timestamp automatically."
       onClose={onClose}
       footer={
         <>
@@ -150,17 +192,23 @@ export default function OnboardingStepModal({
             disabled={!canSave}
             className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-white/90 disabled:opacity-40"
             onClick={() => {
+              if (!validateBeforeSave()) return;
+
               const now = new Date().toISOString();
               const meta: OnboardingMeta = {
                 ...(current || { checked: false }),
                 checked: true,
                 updatedAt: now,
-                comment: comment.trim(),
               };
+
+              if (comment.trim()) {
+                meta.comment = comment.trim();
+              }
 
               if (stepKey === "commissionSettled") {
                 meta.commissionValue = commissionValue.trim();
               }
+
               if (stepKey === "partnerCreated") {
                 meta.partnerEmail = partnerEmail.trim();
               }
@@ -174,12 +222,24 @@ export default function OnboardingStepModal({
       }
     >
       <div className="space-y-4">
+        {stepKey === "contactDetails" ? (
+          <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+            Mark this as completed. The action time will be stored automatically.
+          </div>
+        ) : null}
+
         {stepKey === "commissionSettled" ? (
           <LabeledInput
-            label="Commission (amount or %)"
+            label="Commission value"
             value={commissionValue}
-            onChange={setCommissionValue}
-            placeholder="e.g., 5% or ₹5000"
+            onChange={(v) => {
+              setCommissionValue(v);
+              if (errors.commissionValue) {
+                setErrors((prev) => ({ ...prev, commissionValue: undefined }));
+              }
+            }}
+            placeholder="e.g. 5000"
+            error={errors.commissionValue}
           />
         ) : null}
 
@@ -187,17 +247,25 @@ export default function OnboardingStepModal({
           <LabeledInput
             label="Partner email ID"
             value={partnerEmail}
-            onChange={setPartnerEmail}
-            placeholder="e.g., organizer@gmail.com"
+            onChange={(v) => {
+              setPartnerEmail(v);
+              if (errors.partnerEmail) {
+                setErrors((prev) => ({ ...prev, partnerEmail: undefined }));
+              }
+            }}
+            placeholder="e.g. organizer@gmail.com"
+            error={errors.partnerEmail}
           />
         ) : null}
 
         <div>
-          <div className="text-sm font-medium text-white/70">Comments</div>
+          <div className="text-sm font-medium text-white/70">
+            Comments (optional)
+          </div>
           <textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            placeholder="What happened / what did the organizer say?"
+            placeholder="Add a note only if needed"
             className="mt-2 h-28 w-full resize-none rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
           />
         </div>
