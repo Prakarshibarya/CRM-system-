@@ -33,6 +33,24 @@ function matchesQuery(item: CRMItem, q: string) {
     .includes(needle);
 }
 
+/* ------------------ Helpers ------------------ */
+
+const MILESTONE_KEYS = [
+  "orgVerified",
+  "discountAsked",
+  "promoCardShared",
+  "mysiteMade",
+  "mysiteGiven",
+  "promoFollowUp",
+  "discountFollowUp",
+  "firstSalesUpdate",
+] as const;
+
+function allMilestoneDone(item: CRMItem): boolean {
+  const active = (item.active ?? {}) as Record<string, any>;
+  return MILESTONE_KEYS.every((key) => !!active[key]?.checked);
+}
+
 /* ------------------ Loading Skeleton ------------------ */
 
 function LoadingSkeleton() {
@@ -71,6 +89,71 @@ function ErrorBanner({
   );
 }
 
+/* ------------------ Next Event Prompt Modal ------------------ */
+
+function NextEventPromptModal({
+  open,
+  sourceItem,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  sourceItem: CRMItem | null;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  if (!open || !sourceItem) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[300] flex items-center justify-center bg-black/70 p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0B0B10] p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Icon */}
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/15 text-2xl">
+          🎉
+        </div>
+
+        <div className="mt-4 text-lg font-semibold">All milestones completed!</div>
+        <div className="mt-2 text-sm text-white/60">
+          Great work on{" "}
+          <span className="text-white/90 font-medium">
+            {sourceItem.eventName || sourceItem.title}
+          </span>
+          . Does{" "}
+          <span className="text-white/90 font-medium">
+            {sourceItem.orgName || "this organizer"}
+          </span>{" "}
+          have another upcoming event?
+        </div>
+
+        <div className="mt-6 flex gap-3">
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="flex-1 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-white/90"
+          >
+            Yes, add next event
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-xl bg-white/5 px-4 py-2 text-sm text-white/70 hover:bg-white/10"
+          >
+            Not right now
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ------------------ New Event Modal ------------------ */
 
 function NewEventModal({
@@ -78,6 +161,7 @@ function NewEventModal({
   onClose,
   onSave,
   saving = false,
+  prefill,
 }: {
   open: boolean;
   onClose: () => void;
@@ -96,13 +180,20 @@ function NewEventModal({
     sourceType?: "Venue" | "Organizer";
   }) => Promise<void> | void;
   saving?: boolean;
+  // ✅ NEW: pre-fill from completed event
+  prefill?: {
+    orgName?: string;
+    manager?: string;
+    platform?: "BookMyShow" | "District" | "SortMyScene" | "Other";
+    sourceType?: "Venue" | "Organizer";
+  };
 }) {
   const [title, setTitle] = useState("");
   const [platform, setPlatform] = useState<
     "BookMyShow" | "District" | "SortMyScene" | "Other"
   >("Other");
   const [eventType, setEventType] = useState("");
-  const [manager, setManager] = useState("JD");
+  const [manager, setManager] = useState("");
 
   const [orgName, setOrgName] = useState("");
   const [eventName, setEventName] = useState("");
@@ -121,21 +212,24 @@ function NewEventModal({
     endDate?: string;
   }>({});
 
+  // ✅ When modal opens, apply prefill values if provided
   useEffect(() => {
     if (!open) return;
     setTitle("");
-    setPlatform("Other");
     setEventType("");
-    setManager("");
-    setOrgName("");
     setEventName("");
     setCity("");
     setVenue("");
     setEventLink("");
     setStartDate("");
     setEndDate("");
-    setSourceType("Organizer");
     setErrors({});
+
+    // Apply prefill
+    setOrgName(prefill?.orgName ?? "");
+    setManager(prefill?.manager ?? "");
+    setPlatform(prefill?.platform ?? "Other");
+    setSourceType(prefill?.sourceType ?? "Organizer");
   }, [open]);
 
   if (!open) return null;
@@ -265,7 +359,7 @@ function NewEventModal({
             )}
           </div>
 
-          {/* Org Name */}
+          {/* Org Name — pre-filled */}
           <input
             value={orgName}
             onChange={(e) => setOrgName(e.target.value)}
@@ -344,7 +438,7 @@ function NewEventModal({
             )}
           </div>
 
-          {/* Source Type */}
+          {/* Source Type — pre-filled */}
           <select
             value={sourceType}
             onChange={(e) => setSourceType(e.target.value as any)}
@@ -397,7 +491,6 @@ function NewEventModal({
 /* ------------------ Page ------------------ */
 
 export default function ActiveEventsPage() {
-  // ✅ Pull loading, error, refreshItems from store
   const { items, selected, selectItem, addItem, updateItem, loading, error, refreshItems } =
     useCRMStore();
 
@@ -411,8 +504,17 @@ export default function ActiveEventsPage() {
 
   const [newEventOpen, setNewEventOpen] = useState(false);
   const [creatingEvent, setCreatingEvent] = useState(false);
+  const [newEventPrefill, setNewEventPrefill] = useState<{
+    orgName?: string;
+    manager?: string;
+    platform?: "BookMyShow" | "District" | "SortMyScene" | "Other";
+    sourceType?: "Venue" | "Organizer";
+  } | undefined>(undefined);
 
-  // ✅ Fetch on mount
+  // ✅ NEW: next event prompt state
+  const [nextEventPromptOpen, setNextEventPromptOpen] = useState(false);
+  const [nextEventSourceItem, setNextEventSourceItem] = useState<CRMItem | null>(null);
+
   useEffect(() => {
     refreshItems();
   }, []);
@@ -527,10 +629,9 @@ export default function ActiveEventsPage() {
         sourceType: payload.sourceType,
       } as any);
 
-      // ✅ Sync store from DB after creation
       await refreshItems();
-
       setNewEventOpen(false);
+      setNewEventPrefill(undefined);
     } finally {
       setCreatingEvent(false);
     }
@@ -571,7 +672,6 @@ export default function ActiveEventsPage() {
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
-            {/* ✅ Manual refresh button */}
             <button
               type="button"
               onClick={() => refreshItems()}
@@ -585,7 +685,10 @@ export default function ActiveEventsPage() {
             <button
               type="button"
               className="rounded-full bg-gradient-to-r from-fuchsia-500 to-purple-500 px-4 py-2 text-sm font-medium"
-              onClick={() => setNewEventOpen(true)}
+              onClick={() => {
+                setNewEventPrefill(undefined);
+                setNewEventOpen(true);
+              }}
             >
               + New Event
             </button>
@@ -609,7 +712,6 @@ export default function ActiveEventsPage() {
 
       {/* Body */}
       <section className="mx-auto max-w-7xl px-4 py-6">
-        {/* Filters */}
         <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3">
           <input
             value={query}
@@ -644,7 +746,6 @@ export default function ActiveEventsPage() {
           </select>
         </div>
 
-        {/* Section heading */}
         <div className="mb-3 flex items-center justify-between">
           <div className="text-sm font-medium text-white/70">ACTIVE EVENTS</div>
           <div className="text-sm font-medium text-white/40">
@@ -652,14 +753,12 @@ export default function ActiveEventsPage() {
           </div>
         </div>
 
-        {/* ✅ Error state */}
         {error && !loading && (
           <div className="mb-4">
             <ErrorBanner message={error} onRetry={refreshItems} />
           </div>
         )}
 
-        {/* ✅ Loading skeleton */}
         {loading ? (
           <LoadingSkeleton />
         ) : (
@@ -708,13 +807,15 @@ export default function ActiveEventsPage() {
           onSave={async (result) => {
             const currentActive = (milestoneItem.active ?? {}) as Record<string, any>;
 
+            const updatedActive = {
+              ...currentActive,
+              [result.key]: result,
+            };
+
             await updateItem(
               {
                 ...milestoneItem,
-                active: {
-                  ...currentActive,
-                  [result.key]: result,
-                },
+                active: updatedActive,
               } as any,
               `Active milestone updated: ${result.key}`
             );
@@ -743,16 +844,53 @@ export default function ActiveEventsPage() {
             setMilestoneOpen(false);
             setMilestoneItemId(null);
             setMilestoneKey(null);
+
+            // ✅ Check if all milestones are now done after this save
+            const updatedItem = {
+              ...milestoneItem,
+              active: updatedActive,
+            } as CRMItem;
+
+            if (allMilestoneDone(updatedItem)) {
+              setNextEventSourceItem(updatedItem);
+              setNextEventPromptOpen(true);
+            }
           }}
         />
       ) : null}
 
+      {/* ✅ Next Event Prompt Modal */}
+      <NextEventPromptModal
+        open={nextEventPromptOpen}
+        sourceItem={nextEventSourceItem}
+        onClose={() => {
+          setNextEventPromptOpen(false);
+          setNextEventSourceItem(null);
+        }}
+        onConfirm={() => {
+          // Pre-fill new event form with details from completed event
+          setNewEventPrefill({
+            orgName: nextEventSourceItem?.orgName,
+            manager: nextEventSourceItem?.manager,
+            platform: nextEventSourceItem?.platform as any,
+            sourceType: nextEventSourceItem?.sourceType as any,
+          });
+          setNextEventPromptOpen(false);
+          setNextEventSourceItem(null);
+          setNewEventOpen(true);
+        }}
+      />
+
       {/* New Event Modal */}
       <NewEventModal
         open={newEventOpen}
-        onClose={() => setNewEventOpen(false)}
+        onClose={() => {
+          setNewEventOpen(false);
+          setNewEventPrefill(undefined);
+        }}
         onSave={handleCreateNewEvent}
         saving={creatingEvent}
+        prefill={newEventPrefill}
       />
     </main>
   );
