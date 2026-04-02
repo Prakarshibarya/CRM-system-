@@ -1,10 +1,9 @@
 import type { CRMItem } from "@/types/crm";
 
 /* ============================================================
-   localStorage helpers
-   — used by useCRMStore for local caching and fallback only
-   — DO NOT import addItem or updateItem from here in UI code
-   — always go through useCRMStore for mutations
+   localStorage helpers — used by useCRMStore for caching only
+   DO NOT call addItem/updateItem from here in UI code
+   Always go through useCRMStore for mutations
 ============================================================ */
 
 const KEY = "ha_crm_items_v1";
@@ -37,24 +36,25 @@ export function generateId(prefix = "item") {
    DB functions — called only from useCRMStore, never from UI
 ============================================================ */
 
-export async function loadItemsFromDB(organizerId: string): Promise<CRMItem[]> {
-  const res = await fetch(
-    `/api/items?organizerId=${encodeURIComponent(organizerId)}`,
-    { cache: "no-store" }
-  );
+export async function loadItemsFromDB(userId: string): Promise<CRMItem[]> {
+  // ✅ No longer passes userId as query param — server reads from session
+  const res = await fetch(`/api/items`, {
+    cache: "no-store",
+  });
   if (!res.ok) throw new Error(`Failed to load items: ${res.status}`);
   const data = await res.json();
   return data.items as CRMItem[];
 }
 
 export async function createItemInDB(
-  organizerId: string,
+  userId: string,
   item: CRMItem
 ): Promise<CRMItem> {
   const res = await fetch(`/api/items`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ organizerId, ...item }),
+    // ✅ No longer sends userId in body — server reads from session
+    body: JSON.stringify(item),
   });
   if (!res.ok) throw new Error(`Failed to create item: ${res.status}`);
   const data = await res.json();

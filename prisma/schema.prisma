@@ -1,23 +1,37 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "postgresql"
+  
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
-enum LeadStatus {
-  NEW
-  CONTACTED
-  NEGOTIATING
-  WON
-  LOST
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+
+  status       String   @default("pending")
+
+  role         String   @default("user")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+
+  crmItems CrmItem[]
+
+  @@index([email])
+  @@index([status])
 }
 
+
 model Organizer {
-  id        String   @id
+  id        String   @id @default(cuid())
   name      String
   email     String?  @unique
   phone     String?
@@ -27,8 +41,6 @@ model Organizer {
 
   events Event[]
   leads  Lead[]
-
-  crmItems CrmItem[]
 }
 
 model Event {
@@ -45,14 +57,14 @@ model Event {
 }
 
 model Lead {
-  id           String     @id @default(cuid())
+  id           String  @id @default(cuid())
   organizerId  String
   title        String
   contactName  String?
   contactPhone String?
   contactEmail String?
-  status       LeadStatus @default(NEW)
-  notes        String?
+  status       String  @default("NEW")
+  notes        String? @db.Text
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -63,28 +75,24 @@ model Lead {
   @@index([status])
 }
 
-enum Stage {
-  ONBOARDING
-  ACTIVE
-}
-
 model CrmItem {
-  id          String @id
-  organizerId String
+  id     String @id @default(cuid())
+ 
+  userId String
 
   title     String
   platform  String
   eventType String
   manager   String
-  stage     Stage  @default(ONBOARDING)
+
+  stage     String @default("ONBOARDING")
 
   orgName   String?
   eventName String?
   city      String?
   venue     String?
-  eventLink String?
+  eventLink String? @db.VarChar(2048)
 
-  // ✅ NEW fields — run: npx prisma migrate dev --name add_date_source_fields
   startDate  String?
   endDate    String?
   sourceType String?
@@ -100,8 +108,8 @@ model CrmItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  organizer Organizer @relation(fields: [organizerId], references: [id])
+  user User @relation(fields: [userId], references: [id])
 
-  @@index([organizerId])
+  @@index([userId])
   @@index([stage])
 }

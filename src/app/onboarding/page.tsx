@@ -13,6 +13,7 @@ import { SidebarDrawer } from "../../components/layout/Sidebardrawer";
 
 import { useCRMStore } from "@/hooks/useCRMStore";
 import type { CRMItem } from "@/types/crm";
+import { DiscoverEventsModal } from "@/components/discovery/DiscoverEventsModal";
 
 /* ------------------ Filters ------------------ */
 
@@ -123,6 +124,7 @@ function NewLeadModal({
   >("Other");
   const [eventType, setEventType] = useState("Other");
   const [manager, setManager] = useState("JD");
+  //const [discoverOpen, setDiscoverOpen] = useState(false);
 
   const [orgName, setOrgName] = useState("");
   const [eventName, setEventName] = useState("");
@@ -429,6 +431,7 @@ function OnboardingPageInner() {
     refreshItems,
     addItem: addItemToStore,
     updateItem: updateItemInStore,
+    sessionUser,
   } = useCRMStore();
 
   const [query, setQuery] = useState("");
@@ -442,6 +445,7 @@ function OnboardingPageInner() {
 
   const [newLeadOpen, setNewLeadOpen] = useState(false);
   const [creatingLead, setCreatingLead] = useState(false);
+  const [discoverOpen, setDiscoverOpen] = useState(false);
 
   useEffect(() => {
     refreshItems();
@@ -686,10 +690,24 @@ function OnboardingPageInner() {
             >
               + New Lead
             </button>
+            <button
+              type="button"
+              onClick={() => setDiscoverOpen(true)}
+              className="rounded-full bg-white/5 px-4 py-2 text-sm font-medium text-white/70 hover:bg-white/10 border border-white/10"
+            >
+              🔍 Discover Events
+            </button>
 
-            <div className="grid h-9 w-9 place-items-center rounded-full bg-white/10 text-xs">
-              JD
-            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                await fetch("/api/auth/logout", { method: "POST" });
+                window.location.href = "/login";
+              }}
+              className="rounded-full bg-white/5 px-3 py-2 text-xs text-white/50 hover:bg-white/10"
+            >
+              Logout
+          </button>
           </div>
         </div>
       </header>
@@ -763,6 +781,30 @@ function OnboardingPageInner() {
           </div>
         )}
       </section>
+      <DiscoverEventsModal
+  open={discoverOpen}
+  onClose={() => setDiscoverOpen(false)}
+  onImport={async (events) => {
+    for (const event of events) {
+      await addItemToStore({
+        title: event.title,
+        platform: event.platform as any,
+        eventType: event.eventType,
+        manager: sessionUser?.name ?? "AUTO",
+        stage: "ONBOARDING",
+        eventName: event.eventName,
+        city: event.city,
+        venue: event.venue,
+        eventLink: event.eventLink,
+        startDate: event.startDate,
+        onboarding: { contactDetails: { checked: false }, commissionSettled: { checked: false }, partnerCreated: { checked: false } } as any,
+        active: { orgVerified: { checked: false }, discountAsked: { checked: false }, promoCardShared: { checked: false }, mysiteMade: { checked: false }, mysiteGiven: { checked: false }, promoFollowUp: { checked: false }, discountFollowUp: { checked: false }, firstSalesUpdate: { checked: false } } as any,
+        disabled: false,
+      } as any);
+    }
+    await refreshItems();
+  }}
+/>
 
       <OnboardingStepModal
         open={stepModalOpen}

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useUser } from "@clerk/nextjs";
 import {
   loadItems,
   saveItems,
@@ -13,26 +12,45 @@ import {
 } from "@/lib/store";
 
 import type { CRMItem, Stage, ActivityItem } from "@/types/crm";
+import type { SessionUser } from "@/lib/auth";
 
 /* =========================================
-   useCRMStore (Clerk-authenticated, DB-backed)
+   useCRMStore (session-authenticated, DB-backed)
+   — Clerk removed, uses /api/auth/me instead
 ========================================= */
 
 export function useCRMStore() {
-  const { user, isLoaded } = useUser();
+  // ✅ Replaces useUser() from Clerk
+  const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
+  const [isLoaded, setIsLoaded] = useState(false);
 
   const [items, setItems] = useState<CRMItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // ✅ Fetch session user on mount (replaces Clerk's useUser)
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((res) => res.json())
+      .then((data) => {
+        setSessionUser(data.user ?? null);
+      })
+      .catch(() => {
+        setSessionUser(null);
+      })
+      .finally(() => {
+        setIsLoaded(true);
+      });
+  }, []);
+
   function nowISO() {
     return new Date().toISOString();
   }
 
-  // ✅ organizerId is always the real Clerk user id
-  function getOrganizerId(): string | null {
-    return user?.id ?? null;
+  // ✅ userId from session (replaces Clerk's user.id)
+  function getUserId(): string | null {
+    return sessionUser?.id ?? null;
   }
 
   function setItemsState(next: CRMItem[]) {
@@ -50,10 +68,10 @@ export function useCRMStore() {
   }
 
   async function fetchItemsFromSource() {
-    const organizerId = getOrganizerId();
+    const userId = getUserId();
 
-    // ✅ Don't fetch until Clerk has loaded the user
-    if (!isLoaded || !organizerId) {
+    // Don't fetch until session has loaded
+    if (!isLoaded || !userId) {
       setLoading(false);
       return [];
     }
@@ -62,7 +80,7 @@ export function useCRMStore() {
       setLoading(true);
       setError(null);
 
-      const dbItems = await loadItemsFromDB(organizerId);
+      const dbItems = await loadItemsFromDB(userId);
 
       if (Array.isArray(dbItems)) {
         syncLocal(dbItems);
@@ -82,13 +100,13 @@ export function useCRMStore() {
     }
   }
 
-  // ✅ Fetch when Clerk finishes loading (not before — user id isn't ready yet)
+  // ✅ Fetch items once session user is loaded
   useEffect(() => {
     if (!isLoaded) return;
     seedIfEmpty([]);
     fetchItemsFromSource();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoaded, user?.id]);
+  }, [isLoaded, sessionUser?.id]);
 
   async function refreshItems() {
     return fetchItemsFromSource();
@@ -100,8 +118,8 @@ export function useCRMStore() {
   );
 
   async function addItem(input: Omit<CRMItem, "id" | "activity">) {
-    const organizerId = getOrganizerId();
-    if (!organizerId) throw new Error("Not authenticated");
+    const userId = getUserId();
+    if (!userId) throw new Error("Not authenticated");
 
     const localItem: CRMItem = {
       ...input,
@@ -114,7 +132,7 @@ export function useCRMStore() {
     setSelectedId(localItem.id);
 
     try {
-      const created = await createItemInDB(organizerId, localItem);
+      const created = await createItemInDB(userId, localItem);
 
       if (created?.id) {
         const replaced = optimistic.map((i) =>
@@ -190,5 +208,7 @@ export function useCRMStore() {
     updateItem,
     disableItem,
     moveStage,
+    // ✅ Expose session user in case pages need it (e.g. showing name in header)
+    sessionUser,
   };
 }

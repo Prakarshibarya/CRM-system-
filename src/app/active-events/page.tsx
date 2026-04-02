@@ -693,9 +693,16 @@ export default function ActiveEventsPage() {
               + New Event
             </button>
 
-            <div className="grid h-9 w-9 place-items-center rounded-full bg-white/10 text-xs">
-              JD
-            </div>
+                        <button
+              type="button"
+              onClick={async () => {
+                await fetch("/api/auth/logout", { method: "POST" });
+                window.location.href = "/login";
+              }}
+              className="rounded-full bg-white/5 px-3 py-2 text-xs text-white/50 hover:bg-white/10"
+            >
+              Logout
+            </button>
           </div>
         </div>
       </header>

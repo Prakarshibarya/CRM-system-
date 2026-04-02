@@ -1,24 +1,15 @@
 import { NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import { getSessionUser } from "@/lib/session";
 
 export async function GET(req: Request) {
-  // ✅ Verify the request is from a logged-in user
-  const { userId } = await auth();
-  if (!userId) {
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { searchParams } = new URL(req.url);
-  const organizerId = searchParams.get("organizerId");
-
-  // ✅ Ensure the user can only access their own data
-  if (!organizerId || organizerId !== userId) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
   const items = await prisma.crmItem.findMany({
-    where: { organizerId },
+    where: { userId: sessionUser.id },
     orderBy: { updatedAt: "desc" },
   });
 
@@ -26,15 +17,14 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const { userId } = await auth();
-  if (!userId) {
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const body = await req.json().catch(() => null);
 
   if (
-    !body?.organizerId ||
     !body?.id ||
     !body?.title ||
     !body?.platform ||
@@ -47,25 +37,10 @@ export async function POST(req: Request) {
     );
   }
 
-  // ✅ Prevent users from writing to other users' data
-  if (body.organizerId !== userId) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  // ✅ Auto-create Organizer row if this is their first item
-  await prisma.organizer.upsert({
-    where: { id: userId },
-    update: {},
-    create: {
-      id: userId,
-      name: body.manager ?? "Unknown",
-    },
-  });
-
   const item = await prisma.crmItem.create({
     data: {
       id: body.id,
-      organizerId: userId,
+      userId: sessionUser.id,
       title: body.title,
       platform: body.platform,
       eventType: body.eventType,
