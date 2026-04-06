@@ -34,10 +34,9 @@ export async function POST(req: Request) {
       );
     }
 
-    // ✅ Block pending/rejected users
     if (user.status === "pending") {
       return NextResponse.json(
-        { error: "Your account is pending admin approval. Please check back later." },
+        { error: "Your account is pending admin approval." },
         { status: 403 }
       );
     }
@@ -49,7 +48,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // ✅ Create session
     const session = await getSession();
     session.user = {
       id: user.id,
@@ -57,6 +55,7 @@ export async function POST(req: Request) {
       name: user.name ?? undefined,
       role: user.role,
       status: user.status,
+      sessionVersion: user.sessionVersion, // ✅ seal current version into cookie
     };
     await session.save();
 

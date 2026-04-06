@@ -15,6 +15,7 @@ model User {
   email        String   @unique
   passwordHash String
   name         String?
+  sessionVersion Int @default(0) 
 
   status       String   @default("pending")
 

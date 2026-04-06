@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSessionUser } from "@/lib/session";
+import { requireAuth } from "@/lib/session";
 
-export async function GET(req: Request) {
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET() {
+  // ✅ requireAuth() checks session validity AND that status === "approved"
+  // getSessionUser() only checked that the session existed, not user status
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
 
   const items = await prisma.crmItem.findMany({
-    where: { userId: sessionUser.id },
+    where: { userId: auth.id },
     orderBy: { updatedAt: "desc" },
   });
 
@@ -17,10 +17,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
 
   const body = await req.json().catch(() => null);
 
@@ -40,7 +38,7 @@ export async function POST(req: Request) {
   const item = await prisma.crmItem.create({
     data: {
       id: body.id,
-      userId: sessionUser.id,
+      userId: auth.id, // ✅ always from session, never from body
       title: body.title,
       platform: body.platform,
       eventType: body.eventType,

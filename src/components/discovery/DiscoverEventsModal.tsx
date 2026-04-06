@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { ScrapedEvent } from "@/lib/scrapers/bookmyshow";
+import type { ScrapedEvent } from "@/lib/scrapers/BookMyShow";
 
 type Props = {
   open: boolean;

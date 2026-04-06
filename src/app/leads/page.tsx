@@ -15,22 +15,24 @@ export default function LeadsPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
 
-  const organizerId = "test";
+  // ✅ organizerId is NO LONGER sent by the client.
+  // The API reads it from the validated session server-side.
 
   async function fetchLeads() {
-    const res = await fetch(`/api/leads?organizerId=${organizerId}`);
+    const res = await fetch(`/api/leads`);
+    if (!res.ok) return;
     const data = await res.json();
     setLeads(data.leads || []);
   }
 
   async function createLead() {
+    if (!title.trim()) return;
+
     const res = await fetch("/api/leads", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
+      // ✅ organizerId is intentionally omitted — the server resolves it from session
       body: JSON.stringify({
-        organizerId,
         title,
         contactName: name,
         contactEmail: email,

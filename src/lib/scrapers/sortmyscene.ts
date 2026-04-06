@@ -1,5 +1,5 @@
 import { chromium } from "playwright";
-import type { ScrapedEvent } from "./bookmyshow";
+import type { ScrapedEvent } from "./BookMyShow";
 
 export async function scrapeSortMyScene(city: string): Promise<ScrapedEvent[]> {
   const url = `https://www.sortmyscene.com/events/${encodeURIComponent(city.toLowerCase())}`;
@@ -15,65 +15,65 @@ export async function scrapeSortMyScene(city: string): Promise<ScrapedEvent[]> {
 
   const context = await browser.newContext({
     userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    viewport: { width: 1280, height: 800 },
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    viewport: { width: 1280, height: 900 },
   });
 
   const page = await context.newPage();
   const events: ScrapedEvent[] = [];
 
   try {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.goto(url, { waitUntil: "networkidle", timeout: 45000 });
+    await page.waitForTimeout(3000);
 
-    await page.waitForSelector("a[href*='/event/'], [class*='event-card'], [class*='EventCard']", {
-      timeout: 15000,
-    }).catch(() => null);
+    for (let i = 0; i < 3; i++) {
+      await page.evaluate(() => window.scrollBy(0, window.innerHeight));
+      await page.waitForTimeout(1000);
+    }
 
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(2000);
-
-    const rawEvents = await page.evaluate(() => {
-      const cards = Array.from(
-        document.querySelectorAll("a[href*='/event/']")
-      );
-
-      return cards
-        .map((card) => {
-          const href = (card as HTMLAnchorElement).href;
-          const title =
-            card.querySelector("h2, h3, h4, [class*='title'], [class*='name']")
-              ?.textContent?.trim() ?? "";
-          const venue =
-            card.querySelector("[class*='venue'], [class*='location']")
-              ?.textContent?.trim() ?? "";
-          const date =
-            card.querySelector("[class*='date'], time")
-              ?.textContent?.trim() ?? "";
-          const category =
-            card.querySelector("[class*='category'], [class*='genre']")
-              ?.textContent?.trim() ?? "";
-
-          return { href, title, venue, date, category };
-        })
-        .filter((e) => e.title && e.href);
+    const allLinks = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll("a[href]")).map((a) => {
+        const el = a as HTMLAnchorElement;
+        return {
+          href: el.href,
+          text:
+            el.innerText?.trim() ||
+            el.querySelector("img")?.alt?.trim() ||
+            "",
+        };
+      });
     });
 
+    const eventLinks = allLinks.filter(
+      (l) =>
+        l.href.includes("sortmyscene.com") &&
+        (l.href.includes("/event/") || l.href.includes("/e/")) &&
+        l.text.length > 2
+    );
+
     const seen = new Set<string>();
-    for (const raw of rawEvents) {
-      if (seen.has(raw.href)) continue;
-      seen.add(raw.href);
+    for (const link of eventLinks) {
+      if (seen.has(link.href)) continue;
+      seen.add(link.href);
+
+      const urlSlug = link.href
+        .split("/")
+        .pop()
+        ?.split("?")[0]
+        ?.replace(/-/g, " ") ?? "";
 
       events.push({
-        title: raw.title,
-        eventName: raw.title,
-        platform: "BookMyShow", // SortMyScene maps to Other in CRM
-        eventType: raw.category || "Event",
+        title: link.text || urlSlug,
+        eventName: link.text || urlSlug,
+        platform: "SortMyScene",
+        eventType: "Event",
         city,
-        venue: raw.venue || "—",
-        eventLink: raw.href,
-        startDate: raw.date || undefined,
+        venue: "—",
+        eventLink: link.href,
       });
     }
+
+    console.log(`SortMyScene: found ${eventLinks.length} event links on page`);
   } catch (err) {
     console.error("SortMyScene scraper error:", err);
   } finally {

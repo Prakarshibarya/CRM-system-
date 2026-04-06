@@ -3,7 +3,7 @@ import { chromium } from "playwright";
 export type ScrapedEvent = {
   title: string;
   eventName: string;
-  platform: "BookMyShow";
+  platform: "BookMyShow" | "District" | "SortMyScene" | "Other";
   eventType: string;
   city: string;
   venue: string;
@@ -13,6 +13,7 @@ export type ScrapedEvent = {
 
 const CITY_SLUGS: Record<string, string> = {
   bangalore: "bangalore",
+  bengaluru: "bangalore",
   mumbai: "mumbai",
   delhi: "ncr",
   hyderabad: "hyderabad",
@@ -20,6 +21,7 @@ const CITY_SLUGS: Record<string, string> = {
   pune: "pune",
   kolkata: "kolkata",
   ahmedabad: "ahmedabad",
+  goa: "goa",
 };
 
 export async function scrapeBookMyShow(city: string): Promise<ScrapedEvent[]> {
@@ -32,73 +34,90 @@ export async function scrapeBookMyShow(city: string): Promise<ScrapedEvent[]> {
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-blink-features=AutomationControlled",
+      "--disable-web-security",
     ],
   });
 
   const context = await browser.newContext({
     userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    viewport: { width: 1280, height: 800 },
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    viewport: { width: 1280, height: 900 },
+    extraHTTPHeaders: {
+      "Accept-Language": "en-IN,en;q=0.9",
+    },
   });
 
   const page = await context.newPage();
   const events: ScrapedEvent[] = [];
 
   try {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.goto(url, { waitUntil: "networkidle", timeout: 45000 });
 
-    // Wait for event cards to load
-    await page.waitForSelector("[class*='event-card'], [class*='EventCard'], a[href*='/events/']", {
-      timeout: 15000,
-    }).catch(() => null);
+    // Give JS extra time to render
+    await page.waitForTimeout(3000);
 
-    // Scroll to load more events
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(2000);
+    // Scroll to trigger lazy loading
+    for (let i = 0; i < 3; i++) {
+      await page.evaluate(() => window.scrollBy(0, window.innerHeight));
+      await page.waitForTimeout(1000);
+    }
 
-    const rawEvents = await page.evaluate(() => {
-      const cards = Array.from(
-        document.querySelectorAll("a[href*='/events/']")
-      );
+    // ✅ Dump ALL links and filter by BMS event URL pattern
+    const allLinks = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll("a[href]")).map((a) => {
+        const el = a as HTMLAnchorElement;
+        const href = el.href;
 
-      return cards
-        .map((card) => {
-          const href = (card as HTMLAnchorElement).href;
-          const title =
-            card.querySelector("h3, h2, [class*='title'], [class*='name']")
-              ?.textContent?.trim() ?? "";
-          const venue =
-            card.querySelector("[class*='venue'], [class*='location']")
-              ?.textContent?.trim() ?? "";
-          const date =
-            card.querySelector("[class*='date'], [class*='time'], time")
-              ?.textContent?.trim() ?? "";
-          const category =
-            card.querySelector("[class*='category'], [class*='genre'], [class*='tag']")
-              ?.textContent?.trim() ?? "";
+        // Walk up the DOM to find text content near this link
+        const text = el.innerText?.trim() ||
+          el.querySelector("*")?.textContent?.trim() || "";
 
-          return { href, title, venue, date, category };
-        })
-        .filter((e) => e.title && e.href && e.href.includes("/events/"));
+        // Try to find an image alt as title fallback
+        const imgAlt = el.querySelector("img")?.alt?.trim() || "";
+
+        return {
+          href,
+          text: text || imgAlt,
+        };
+      });
     });
 
-    // Deduplicate by href
+    // Filter to only event links
+    const eventLinks = allLinks.filter(
+      (l) =>
+        l.href.includes("bookmyshow.com") &&
+        (l.href.includes("/events/") ||
+          l.href.includes("/activities/") ||
+          l.href.includes("/show/")) &&
+        l.text.length > 2 &&
+        !l.href.includes("explore") &&
+        !l.href.includes("undefined")
+    );
+
     const seen = new Set<string>();
-    for (const raw of rawEvents) {
-      if (seen.has(raw.href)) continue;
-      seen.add(raw.href);
+    for (const link of eventLinks) {
+      if (seen.has(link.href)) continue;
+      seen.add(link.href);
+
+      // Extract event name from URL slug as fallback
+      const urlSlug = link.href
+        .split("/")
+        .pop()
+        ?.split("?")[0]
+        ?.replace(/-/g, " ") ?? "";
 
       events.push({
-        title: raw.title,
-        eventName: raw.title,
+        title: link.text || urlSlug,
+        eventName: link.text || urlSlug,
         platform: "BookMyShow",
-        eventType: raw.category || "Event",
-        city: city,
-        venue: raw.venue || "—",
-        eventLink: raw.href,
-        startDate: raw.date || undefined,
+        eventType: "Event",
+        city,
+        venue: "—",
+        eventLink: link.href,
       });
     }
+
+    console.log(`BMS: found ${eventLinks.length} event links on page`);
   } catch (err) {
     console.error("BMS scraper error:", err);
   } finally {

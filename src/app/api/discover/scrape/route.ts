@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { scrapeBookMyShow } from "@/lib/scrapers/bookmyshow";
-import { scrapeDistrict } from "@/lib/scrapers/district";
-import { scrapeSortMyScene } from "@/lib/scrapers/sortmyscene";
+import { scrapeBookMyShow } from "@/lib/scrapers/BookMyShow";
+import { scrapeDistrict } from "@/lib/scrapers/District";
+import { scrapeSortMyScene } from "@/lib/scrapers/SortMyScene";
 import { deduplicateEvents } from "@/lib/scrapers/deduplicator";
 import type { CRMItem } from "@/types/crm";
 

@@ -1,27 +1,26 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSessionUser } from "@/lib/session";
+import { requireAuth } from "@/lib/session";
 
 export async function PATCH(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const sessionUser = await getSessionUser();
-    if (!sessionUser) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    // ✅ requireAuth() also blocks pending/rejected users
+    const auth = await requireAuth();
+    if (auth instanceof NextResponse) return auth;
 
     const { id } = await context.params;
     const body = await req.json();
 
-    // ✅ Verify item belongs to this user
     const existing = await prisma.crmItem.findUnique({ where: { id } });
     if (!existing) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    if (existing.userId !== sessionUser.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (existing.userId !== auth.id) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      // ✅ Return 404 not 403 — don't reveal that the record exists but is owned by someone else
     }
 
     const data: any = {};
@@ -66,14 +65,12 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  req: Request,
+  _req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const sessionUser = await getSessionUser();
-    if (!sessionUser) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await requireAuth();
+    if (auth instanceof NextResponse) return auth;
 
     const { id } = await context.params;
 
@@ -81,8 +78,8 @@ export async function DELETE(
     if (!existing) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    if (existing.userId !== sessionUser.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (existing.userId !== auth.id) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
     await prisma.crmItem.delete({ where: { id } });

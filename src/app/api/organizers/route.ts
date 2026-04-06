@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAdmin } from "@/lib/session";
 
 export async function POST(req: Request) {
+  // ✅ Only admins can create organizer records
+  const auth = await requireAdmin();
+  if (auth instanceof NextResponse) return auth;
+
   const body = await req.json().catch(() => null);
 
   if (!body?.name) {
@@ -10,8 +15,6 @@ export async function POST(req: Request) {
 
   const organizer = await prisma.organizer.create({
     data: {
-      // optional: allow passing a custom id for testing
-      id: body.id ?? undefined,
       name: body.name,
       email: body.email ?? null,
       phone: body.phone ?? null,

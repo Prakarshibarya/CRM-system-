@@ -1,4 +1,4 @@
-import type { ScrapedEvent } from "./bookmyshow";
+import type { ScrapedEvent } from "./BookMyShow";
 import type { CRMItem } from "@/types/crm";
 
 export function deduplicateEvents(

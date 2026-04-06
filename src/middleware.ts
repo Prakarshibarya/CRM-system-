@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { getIronSession } from "iron-session";
 
 const PUBLIC_PATHS = [
   "/login",
@@ -9,15 +10,23 @@ const PUBLIC_PATHS = [
   "/api/auth/me",
 ];
 
-export function middleware(req: NextRequest) {
+const SESSION_OPTIONS = {
+  password: process.env.SESSION_SECRET as string,
+  cookieName: "ha_crm_session",
+  cookieOptions: {
+    secure: process.env.NODE_ENV === "production",
+    httpOnly: true,
+    sameSite: "lax" as const,
+  },
+};
+
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Allow public paths
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 
-  // Allow static files and Next internals
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
@@ -26,14 +35,42 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // ✅ Just check cookie presence — no iron-session decryption needed here
-  const sessionCookie = req.cookies.get("ha_crm_session");
+  // ✅ API routes must return 401 JSON, not a redirect.
+  // Redirecting an API call causes the browser/fetch to silently follow
+  // the redirect and return the login page HTML with a 200 — which breaks
+  // all API clients and makes auth failures invisible to callers.
+  const isApiRoute = pathname.startsWith("/api/");
 
-  if (!sessionCookie?.value) {
+  const res = NextResponse.next();
+
+  try {
+    const session = await getIronSession<{
+      user?: { id: string; status: string; sessionVersion: number };
+    }>(req, res, SESSION_OPTIONS);
+
+    if (!session.user?.id) {
+      if (isApiRoute) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+      return NextResponse.redirect(new URL("/login", req.url));
+    }
+
+    if (session.user.status !== "approved") {
+      if (isApiRoute) {
+        return NextResponse.json({ error: "Your account is not approved." }, { status: 403 });
+      }
+      return NextResponse.redirect(new URL("/login", req.url));
+    }
+
+  } catch {
+    // Cookie decryption failed — forged or tampered cookie
+    if (isApiRoute) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  return NextResponse.next();
+  return res;
 }
 
 export const config = {
