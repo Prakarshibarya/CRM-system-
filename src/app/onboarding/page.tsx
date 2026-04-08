@@ -10,10 +10,10 @@ import OnboardingStepModal, {
   type OnboardingMeta,
 } from "../../components/onboarding/OnboardingStepModal";
 import { SidebarDrawer } from "../../components/layout/Sidebardrawer";
+
 import { useCRMStore } from "@/hooks/useCRMStore";
 import type { CRMItem } from "@/types/crm";
 import { DiscoverEventsModal } from "@/components/discovery/DiscoverEventsModal";
-import { useManagers } from "@/hooks/useManagers";
 
 /* ------------------ Filters ------------------ */
 
@@ -22,6 +22,7 @@ type PlatformFilter = "All" | "BookMyShow" | "District" | "SortMyScene" | "Other
 function matchesQuery(item: CRMItem, q: string) {
   const needle = q.trim().toLowerCase();
   if (!needle) return true;
+
   return [
     item.title,
     item.orgName,
@@ -98,7 +99,6 @@ function NewLeadModal({
   onClose,
   onSave,
   saving = false,
-  managers = [],
 }: {
   open: boolean;
   onClose: () => void;
@@ -117,14 +117,15 @@ function NewLeadModal({
     sourceType?: "Venue" | "Organizer";
   }) => Promise<void> | void;
   saving?: boolean;
-  managers?: { id: string; label: string }[];
 }) {
   const [title, setTitle] = useState("");
   const [platform, setPlatform] = useState<
     "BookMyShow" | "District" | "SortMyScene" | "Other"
   >("Other");
-  const [eventType, setEventType] = useState("");
-  const [manager, setManager] = useState("");
+  const [eventType, setEventType] = useState("Other");
+  const [manager, setManager] = useState("JD");
+  //const [discoverOpen, setDiscoverOpen] = useState(false);
+
   const [orgName, setOrgName] = useState("");
   const [eventName, setEventName] = useState("");
   const [city, setCity] = useState("");
@@ -141,19 +142,12 @@ function NewLeadModal({
     endDate?: string;
   }>({});
 
-  // Set default manager to first in list when managers load
-  useEffect(() => {
-    if (managers.length > 0 && !manager) {
-      setManager(managers[0].label);
-    }
-  }, [managers]);
-
   useEffect(() => {
     if (!open) return;
     setTitle("");
     setPlatform("Other");
     setEventType("");
-    setManager(managers[0]?.label ?? "");
+    setManager("");
     setOrgName("");
     setEventName("");
     setCity("");
@@ -275,28 +269,19 @@ function NewLeadModal({
             />
           </Field>
 
-          {/* ── Account Manager — now a dropdown of approved users ── */}
           <div>
             <Field label="Account Manager (required)">
-              <select
+              <input
                 value={manager}
                 onChange={(e) => {
                   setManager(e.target.value);
                   if (errors.manager) setErrors((p) => ({ ...p, manager: undefined }));
                 }}
+                placeholder="e.g., JD"
                 className={`w-full rounded-xl border bg-black/40 px-3 py-2 text-sm ${
                   errors.manager ? "border-red-500/60" : "border-white/10"
                 }`}
-              >
-                {managers.map((m) => (
-                  <option key={m.id} value={m.label}>
-                    {m.label}
-                  </option>
-                ))}
-                {managers.length === 0 && (
-                  <option value="">No managers available</option>
-                )}
-              </select>
+              />
             </Field>
             {errors.manager && (
               <div className="mt-1 text-xs text-red-400">{errors.manager}</div>
@@ -449,9 +434,6 @@ function OnboardingPageInner() {
     sessionUser,
   } = useCRMStore();
 
-  // ── Approved users for manager dropdown ──
-  const { managers: managerOptions } = useManagers();
-
   const [query, setQuery] = useState("");
   const [platformFilter, setPlatformFilter] = useState<PlatformFilter>("All");
   const [managerFilter, setManagerFilter] = useState<string>("All");
@@ -475,7 +457,6 @@ function OnboardingPageInner() {
     if (v === "1") setNewLeadOpen(true);
   }, [searchParams]);
 
-  // Manager filter list — derived from items currently in the store
   const managers = useMemo(() => {
     const set = new Set<string>();
     items.forEach((i) => i.manager && set.add(i.manager));
@@ -501,6 +482,7 @@ function OnboardingPageInner() {
   function openStep(itemId: string, key: OnboardingKey) {
     const item = items.find((i) => i.id === itemId);
     if (!item) return;
+
     const current = (item.onboarding?.[key] || { checked: false }) as OnboardingMeta;
     setModalItemId(itemId);
     setModalKey(key);
@@ -708,13 +690,12 @@ function OnboardingPageInner() {
             >
               + New Lead
             </button>
-
             <button
               type="button"
               onClick={() => setDiscoverOpen(true)}
               className="rounded-full bg-white/5 px-4 py-2 text-sm font-medium text-white/70 hover:bg-white/10 border border-white/10"
             >
-              🔍 Add Events
+              🔍 Discover Events
             </button>
 
             <button
@@ -726,7 +707,7 @@ function OnboardingPageInner() {
               className="rounded-full bg-white/5 px-3 py-2 text-xs text-white/50 hover:bg-white/10"
             >
               Logout
-            </button>
+          </button>
           </div>
         </div>
       </header>
@@ -800,42 +781,30 @@ function OnboardingPageInner() {
           </div>
         )}
       </section>
-
-      {/* ── Discover Events Modal — Excel upload ── */}
       <DiscoverEventsModal
-        open={discoverOpen}
-        onClose={() => setDiscoverOpen(false)}
-        onImport={async (events) => {
-          for (const event of events) {
-            await addItemToStore({
-              title: event.title,
-              platform: event.platform as any,
-              eventType: "Other",
-              manager: event.manager,
-              stage: "ONBOARDING",
-              city: event.city,
-              eventLink: event.eventLink,
-              onboarding: {
-                contactDetails: { checked: false },
-                commissionSettled: { checked: false },
-                partnerCreated: { checked: false },
-              } as any,
-              active: {
-                orgVerified: { checked: false },
-                discountAsked: { checked: false },
-                promoCardShared: { checked: false },
-                mysiteMade: { checked: false },
-                mysiteGiven: { checked: false },
-                promoFollowUp: { checked: false },
-                discountFollowUp: { checked: false },
-                firstSalesUpdate: { checked: false },
-              } as any,
-              disabled: false,
-            } as any);
-          }
-          await refreshItems();
-        }}
-      />
+  open={discoverOpen}
+  onClose={() => setDiscoverOpen(false)}
+  onImport={async (events) => {
+    for (const event of events) {
+      await addItemToStore({
+        title: event.title,
+        platform: event.platform as any,
+        eventType: event.eventType,
+        manager: sessionUser?.name ?? "AUTO",
+        stage: "ONBOARDING",
+        eventName: event.eventName,
+        city: event.city,
+        venue: event.venue,
+        eventLink: event.eventLink,
+        startDate: event.startDate,
+        onboarding: { contactDetails: { checked: false }, commissionSettled: { checked: false }, partnerCreated: { checked: false } } as any,
+        active: { orgVerified: { checked: false }, discountAsked: { checked: false }, promoCardShared: { checked: false }, mysiteMade: { checked: false }, mysiteGiven: { checked: false }, promoFollowUp: { checked: false }, discountFollowUp: { checked: false }, firstSalesUpdate: { checked: false } } as any,
+        disabled: false,
+      } as any);
+    }
+    await refreshItems();
+  }}
+/>
 
       <OnboardingStepModal
         open={stepModalOpen}
@@ -857,7 +826,6 @@ function OnboardingPageInner() {
         }}
       />
 
-      {/* ── New Lead Modal — manager dropdown ── */}
       <NewLeadModal
         open={newLeadOpen}
         onClose={() => {
@@ -866,7 +834,6 @@ function OnboardingPageInner() {
         }}
         onSave={handleCreateNewLead}
         saving={creatingLead}
-        managers={managerOptions}
       />
     </main>
   );

@@ -26,7 +26,7 @@ export async function POST(req: Request) {
     !body?.id ||
     !body?.title ||
     !body?.platform ||
-    !body?.eventType === undefined || 
+    !body?.eventType ||
     !body?.manager
   ) {
     return NextResponse.json(

@@ -6,6 +6,8 @@ import { notifySlack } from "@/lib/notifySlack";
 import DisableLeadModal from "@/components/lead/DisableLeadModal";
 import type { CRMItem } from "@/types/crm";
 
+// ✅ FIX 1: Removed dead import `getMaxListeners` from "events"
+
 type BadgeTone = "neutral" | "green" | "purple";
 
 function toneClass(tone: BadgeTone) {
@@ -49,7 +51,6 @@ export function SidebarDrawer({ open, item, onClose, onUpdated }: SidebarDrawerP
   const [editMode, setEditMode] = useState(false);
   const [orgName, setOrgName] = useState("");
   const [eventName, setEventName] = useState("");
-  const [eventNameChanged, setEventNameChanged] = useState(false); // ✅ NEW
   const [platform, setPlatform] = useState("");
   const [eventType, setEventType] = useState("");
   const [eventLink, setEventLink] = useState("");
@@ -63,6 +64,7 @@ export function SidebarDrawer({ open, item, onClose, onUpdated }: SidebarDrawerP
   const [disableModalOpen, setDisableModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // ✅ FIX 7: Added `manager` to error state
   const [errors, setErrors] = useState<{
     eventLink?: string;
     manager?: string;
@@ -75,13 +77,13 @@ export function SidebarDrawer({ open, item, onClose, onUpdated }: SidebarDrawerP
     setEditMode(false);
     setOrgName(selected.orgName || "");
     setEventName(selected.eventName || "");
-    setEventNameChanged(false); // ✅ Reset on new item
     setPlatform(selected.platform || "");
     setEventType(selected.eventType || "");
     setEventLink(selected.eventLink || "");
     setCity(selected.city || "");
     setVenue(selected.venue || "");
     setManager(selected.manager || "");
+    // ✅ FIX 5: Initialise startDate and endDate from selected item
     setStartDate(selected.startDate || "");
     setEndDate(selected.endDate || "");
     setSourceType(selected.sourceType || "Organizer");
@@ -110,12 +112,14 @@ export function SidebarDrawer({ open, item, onClose, onUpdated }: SidebarDrawerP
       endDate?: string;
     } = {};
 
+    // ✅ FIX 3: eventLink required + format check
     if (!eventLink.trim()) {
       nextErrors.eventLink = "Event link is required.";
     } else if (!isValidUrl(eventLink.trim())) {
       nextErrors.eventLink = "Enter a valid URL.";
     }
 
+    // ✅ FIX 2: manager required
     if (!manager.trim()) {
       nextErrors.manager = "Manager is required.";
     }
@@ -350,10 +354,7 @@ export function SidebarDrawer({ open, item, onClose, onUpdated }: SidebarDrawerP
                       <input
                         className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm"
                         value={eventName}
-                        onChange={(e) => {
-                          setEventName(e.target.value);
-                          setEventNameChanged(true); // ✅ Mark as changed
-                        }}
+                        onChange={(e) => setEventName(e.target.value)}
                       />
                     </div>
                   </div>
@@ -378,7 +379,7 @@ export function SidebarDrawer({ open, item, onClose, onUpdated }: SidebarDrawerP
                     </div>
                   </div>
 
-                  {/* Event Link */}
+                  {/* ✅ FIX 3: Event Link — required field with validation */}
                   <div>
                     <div className="text-xs text-white/50">
                       Event Link <span className="text-red-400">*</span>
@@ -420,7 +421,7 @@ export function SidebarDrawer({ open, item, onClose, onUpdated }: SidebarDrawerP
                     </div>
                   </div>
 
-                  {/* Start + End Date */}
+                  {/* ✅ FIX 5: Start Date — now a real date input, not display-only */}
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
                       <div className="text-xs text-white/50">Start Date</div>
@@ -455,7 +456,7 @@ export function SidebarDrawer({ open, item, onClose, onUpdated }: SidebarDrawerP
                     </div>
                   </div>
 
-                  {/* Source Type */}
+                  {/* ✅ FIX 6: Source Type — now a real <select>, not display-only */}
                   <div>
                     <div className="text-xs text-white/50">Source Type</div>
                     <select
@@ -470,7 +471,7 @@ export function SidebarDrawer({ open, item, onClose, onUpdated }: SidebarDrawerP
                     </select>
                   </div>
 
-                  {/* Account Manager */}
+                  {/* ✅ FIX 2: Manager — required with error */}
                   <div>
                     <div className="text-xs text-white/50">
                       Account Manager <span className="text-red-400">*</span>
@@ -491,7 +492,7 @@ export function SidebarDrawer({ open, item, onClose, onUpdated }: SidebarDrawerP
                     )}
                   </div>
 
-                  {/* Save / Cancel */}
+                  {/* ✅ FIX 4: Save button disabled while saving */}
                   <div className="flex gap-2 pt-1">
                     <button
                       type="button"
@@ -516,11 +517,10 @@ export function SidebarDrawer({ open, item, onClose, onUpdated }: SidebarDrawerP
                           startDate: startDate || undefined,
                           endDate: endDate || undefined,
                           sourceType,
-                          // ✅ Only rebuild title if user explicitly changed the event name
-                         title: eventNameChanged
-                            ? eventName.trim() || selected.title
-                            : selected.title,
-                            activity: [
+                          title: `${orgName.trim() || selected.orgName || "Unknown"} — ${
+                            eventName.trim() || selected.eventName || "Event"
+                          }`,
+                          activity: [
                             { at: now, text: "Details edited" },
                             ...(selected.activity || []),
                           ],
