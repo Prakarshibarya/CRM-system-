@@ -51,3 +51,10 @@ build
 coverage
 *.log
 .prisma
+
+# Security
+.env
+.env.local
+.env.*
+.vscode/
+.idea/
