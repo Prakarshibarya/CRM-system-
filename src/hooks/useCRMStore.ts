@@ -9,18 +9,16 @@ import {
   loadItemsFromDB,
   createItemInDB,
   updateItemInDB,
-} from "@/lib/store";
+} from "@/lib/store.client";
 
 import type { CRMItem, Stage, ActivityItem } from "@/types/crm";
 import type { SessionUser } from "@/lib/auth";
 
 /* =========================================
    useCRMStore (session-authenticated, DB-backed)
-   — Clerk removed, uses /api/auth/me instead
 ========================================= */
 
 export function useCRMStore() {
-  // ✅ Replaces useUser() from Clerk
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -29,7 +27,7 @@ export function useCRMStore() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ Fetch session user on mount (replaces Clerk's useUser)
+  // Fetch session user on mount
   useEffect(() => {
     fetch("/api/auth/me")
       .then((res) => res.json())
@@ -48,15 +46,6 @@ export function useCRMStore() {
     return new Date().toISOString();
   }
 
-  // ✅ userId from session (replaces Clerk's user.id)
-  function getUserId(): string | null {
-    return sessionUser?.id ?? null;
-  }
-
-  function setItemsState(next: CRMItem[]) {
-    setItems(next);
-  }
-
   function syncLocal(next: CRMItem[]) {
     setItems(next);
     saveItems(next);
@@ -68,10 +57,7 @@ export function useCRMStore() {
   }
 
   async function fetchItemsFromSource() {
-    const userId = getUserId();
-
-    // Don't fetch until session has loaded
-    if (!isLoaded || !userId) {
+    if (!isLoaded || !sessionUser?.id) {
       setLoading(false);
       return [];
     }
@@ -80,7 +66,8 @@ export function useCRMStore() {
       setLoading(true);
       setError(null);
 
-      const dbItems = await loadItemsFromDB(userId);
+      // ✅ loadItemsFromDB now takes no arguments — server reads userId from session
+      const dbItems = await loadItemsFromDB();
 
       if (Array.isArray(dbItems)) {
         syncLocal(dbItems);
@@ -88,11 +75,11 @@ export function useCRMStore() {
       }
 
       const local = loadItems();
-      setItemsState(local);
+      setItems(local);
       return local;
     } catch {
       const local = loadItems();
-      setItemsState(local);
+      setItems(local);
       setError("Failed to load from database. Showing local data.");
       return local;
     } finally {
@@ -100,7 +87,6 @@ export function useCRMStore() {
     }
   }
 
-  // ✅ Fetch items once session user is loaded
   useEffect(() => {
     if (!isLoaded) return;
     seedIfEmpty([]);
@@ -118,8 +104,7 @@ export function useCRMStore() {
   );
 
   async function addItem(input: Omit<CRMItem, "id" | "activity">) {
-    const userId = getUserId();
-    if (!userId) throw new Error("Not authenticated");
+    if (!sessionUser?.id) throw new Error("Not authenticated");
 
     const localItem: CRMItem = {
       ...input,
@@ -127,12 +112,15 @@ export function useCRMStore() {
       activity: [{ at: nowISO(), text: "Lead created" }],
     };
 
+    // Optimistically add to UI immediately
     const optimistic = [localItem, ...items];
     syncLocal(optimistic);
     setSelectedId(localItem.id);
 
     try {
-      const created = await createItemInDB(userId, localItem);
+      // ✅ createItemInDB now takes just the item — no userId argument
+      // The server reads userId from the session cookie
+      const created = await createItemInDB(localItem);
 
       if (created?.id) {
         const replaced = optimistic.map((i) =>
@@ -142,8 +130,10 @@ export function useCRMStore() {
         setSelectedId(created.id);
         return created as CRMItem;
       }
-    } catch {
-      // keep optimistic
+    } catch (err) {
+      // Log so failures are visible during debugging
+      console.error("createItemInDB failed:", err);
+      // Keep optimistic state — item stays visible locally
     }
 
     return localItem;
@@ -208,7 +198,6 @@ export function useCRMStore() {
     updateItem,
     disableItem,
     moveStage,
-    // ✅ Expose session user in case pages need it (e.g. showing name in header)
     sessionUser,
   };
 }

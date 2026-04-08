@@ -1,23 +1,33 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/session";
 
-export async function GET() {
-  // ✅ Only admins can list users
-  const auth = await requireAdmin();
-  if (auth instanceof NextResponse) return auth;
+export async function PATCH(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { action } = await req.json();
 
-  const users = await prisma.user.findMany({
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      status: true,
-      role: true,
-      createdAt: true,
-    },
-    orderBy: { createdAt: "desc" },
-  });
+    let data: any = {};
 
-  return NextResponse.json({ users });
+    if (action === "approve") {
+      data.status = "approved";
+    } else if (action === "reject") {
+      data.status = "rejected";
+    } else if (action === "make_admin") {
+      data.role = "admin";
+    } else {
+      return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+    }
+
+    const user = await prisma.user.update({
+      where: { id: params.id },
+      data,
+    });
+
+    return NextResponse.json({ user });
+  } catch (e) {
+    console.error(e);
+    return NextResponse.json({ error: "Failed" }, { status: 500 });
+  }
 }
