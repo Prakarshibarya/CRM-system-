@@ -50,37 +50,6 @@ export default function LeadCard({
 
         {/* MIDDLE: Steps / Milestones */}
         <div className="lg:col-span-5 min-w-0">{children}</div>
-
-        {/* RIGHT: Quick actions */}
-        <div className="lg:col-span-2 flex items-center justify-start lg:justify-end gap-2">
-          {rightActions ? (
-            rightActions
-          ) : (
-            <>
-              <button
-                type="button"
-                className="grid h-9 w-9 place-items-center rounded-full bg-white/5 hover:bg-white/10"
-                title="Message"
-              >
-                @
-              </button>
-              <button
-                type="button"
-                className="grid h-9 w-9 place-items-center rounded-full bg-white/5 hover:bg-white/10"
-                title="Call"
-              >
-                ☎
-              </button>
-              <button
-                type="button"
-                className="grid h-9 w-9 place-items-center rounded-full bg-white/5 hover:bg-white/10"
-                title="Open link"
-              >
-                ↗
-              </button>
-            </>
-          )}
-        </div>
       </div>
     </div>
   );

@@ -782,30 +782,44 @@ function OnboardingPageInner() {
         )}
       </section>
       <DiscoverEventsModal
-  open={discoverOpen}
-  onClose={() => setDiscoverOpen(false)}
-  onImport={async (events) => {
-    for (const event of events) {
-      await addItemToStore({
-        title: event.title,
-        platform: event.platform as any,
-        eventType: event.eventType,
-        manager: sessionUser?.name ?? "AUTO",
-        stage: "ONBOARDING",
-        eventName: event.eventName,
-        city: event.city,
-        venue: event.venue,
-        eventLink: event.eventLink,
-        startDate: event.startDate,
-        onboarding: { contactDetails: { checked: false }, commissionSettled: { checked: false }, partnerCreated: { checked: false } } as any,
-        active: { orgVerified: { checked: false }, discountAsked: { checked: false }, promoCardShared: { checked: false }, mysiteMade: { checked: false }, mysiteGiven: { checked: false }, promoFollowUp: { checked: false }, discountFollowUp: { checked: false }, firstSalesUpdate: { checked: false } } as any,
-        disabled: false,
-      } as any);
-    }
-    await refreshItems();
-  }}
-/>
-
+          open={discoverOpen}
+          onClose={() => setDiscoverOpen(false)}
+          onImport={async (events) => {
+            for (const event of events) {
+              await addItemToStore({
+                title: event.title,
+                platform: event.platform as any,
+                eventType: event.eventType ?? "Other",      // ✅ safe default
+                manager: event.manager,                      // ✅ comes from modal dropdown
+                stage: "ONBOARDING",
+                eventName: event.eventName ?? undefined,
+                city: event.city ?? undefined,
+                venue: event.venue ?? undefined,
+                eventLink: event.eventLink ?? undefined,
+                startDate: event.startDate ?? undefined,
+                endDate: event.endDate ?? undefined,
+                onboarding: {
+                  contactDetails: { checked: false },
+                  commissionSettled: { checked: false },
+                  partnerCreated: { checked: false },
+                } as any,
+                active: {
+                  orgVerified: { checked: false },
+                  discountAsked: { checked: false },
+                  promoCardShared: { checked: false },
+                  mysiteMade: { checked: false },
+                  mysiteGiven: { checked: false },
+                  promoFollowUp: { checked: false },
+                  discountFollowUp: { checked: false },
+                  firstSalesUpdate: { checked: false },
+                } as any,
+                disabled: false,
+              } as any);
+            }
+            await refreshItems();
+          }}
+        />
+      
       <OnboardingStepModal
         open={stepModalOpen}
         stepKey={modalKey}

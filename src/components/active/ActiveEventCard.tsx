@@ -69,31 +69,7 @@ export default function ActiveEventCard({ item, onOpen, onMilestoneClick }: Prop
           />
         </div>
 
-        <div className="flex items-start justify-start gap-2 xl:justify-end">
-          <button
-            type="button"
-            className="grid h-10 w-10 place-items-center rounded-full bg-white/5 text-sm text-white/70 hover:bg-white/10"
-            title="Mentions"
-          >
-            @
-          </button>
-
-          <button
-            type="button"
-            className="grid h-10 w-10 place-items-center rounded-full bg-white/5 text-sm text-white/70 hover:bg-white/10"
-            title="Call"
-          >
-            ☎
-          </button>
-
-          <button
-            type="button"
-            className="grid h-10 w-10 place-items-center rounded-full bg-white/5 text-sm text-white/70 hover:bg-white/10"
-            title="Open link"
-          >
-            ↗
-          </button>
-        </div>
+      
       </div>
     </div>
   );

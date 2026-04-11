@@ -20,10 +20,9 @@ export default function OnboardingCard({ item, onOpen, onStepClick }: Props) {
     (k) => (onboarding as any)[k]?.checked
   ).length;
 
-  const statusText = doneCount === 3 ? "Ready to move to Active Events" : "Complete onboarding steps";
 
   return (
-    <LeadCard item={item} onOpen={onOpen} statusText={statusText}>
+    <LeadCard item={item} onOpen={onOpen} >
       <OnboardingSteps
         onboarding={onboarding as any}
         onOpen={(key: OnboardingKey) => onStepClick(item.id, key)}
