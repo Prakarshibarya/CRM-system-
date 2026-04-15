@@ -7,8 +7,11 @@ export type Stage = "ONBOARDING" | "ACTIVE";
 /* ---------- Activity ---------- */
 
 export type ActivityItem = {
-  at: string; // ISO timestamp
-  text: string;
+  at: string;           // ISO timestamp
+  text: string;         // description of the change
+  by?: string;          // name of the user who made the change (stored but not shown in item sidebar)
+  itemId?: string;      // which CRM item (used in history view)
+  itemTitle?: string;   // denormalized title for history view
 };
 
 /* ---------- Meta base ---------- */
@@ -44,10 +47,7 @@ export type MilestoneKey =
   | "firstSalesUpdate";
 
 export type ActiveMeta = StepMeta & {
-  // discount
   discountValue?: string;
-
-  // promotion
   promoAccepted?: "Yes" | "No";
 };
 
@@ -56,10 +56,8 @@ export type ActiveMeta = StepMeta & {
 export type CRMItem = {
   id: string;
 
-  // display
   title: string;
 
-  // org / event details
   orgName?: string;
   eventName?: string;
   platform: string;
@@ -73,18 +71,14 @@ export type CRMItem = {
 
   manager: string;
 
-  // lifecycle
   stage: Stage;
 
-  // flags
   disabled?: boolean;
   disabledReason?: string;
   disabledAt?: string;
 
-  // steps
   onboarding: Record<OnboardingKey, OnboardingMeta>;
   active: Record<MilestoneKey, ActiveMeta>;
 
-  // history
   activity: ActivityItem[];
 };

@@ -9,52 +9,31 @@ import {
   loadItemsFromDB,
   createItemInDB,
   updateItemInDB,
-} from "@/lib/store";
+} from "@/lib/store.client";
 
 import type { CRMItem, Stage, ActivityItem } from "@/types/crm";
 import type { SessionUser } from "@/lib/auth";
 
-/* =========================================
-   useCRMStore (session-authenticated, DB-backed)
-   — Clerk removed, uses /api/auth/me instead
-========================================= */
-
 export function useCRMStore() {
-  // ✅ Replaces useUser() from Clerk
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [isLoaded,    setIsLoaded]    = useState(false);
+  const [items,       setItems]       = useState<CRMItem[]>([]);
+  const [selectedId,  setSelectedId]  = useState<string | null>(null);
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState<string | null>(null);
 
-  const [items, setItems] = useState<CRMItem[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // ✅ Fetch session user on mount (replaces Clerk's useUser)
   useEffect(() => {
     fetch("/api/auth/me")
-      .then((res) => res.json())
-      .then((data) => {
-        setSessionUser(data.user ?? null);
-      })
-      .catch(() => {
-        setSessionUser(null);
-      })
-      .finally(() => {
-        setIsLoaded(true);
-      });
+      .then((r) => r.json())
+      .then((d) => setSessionUser(d.user ?? null))
+      .catch(() => setSessionUser(null))
+      .finally(() => setIsLoaded(true));
   }, []);
 
-  function nowISO() {
-    return new Date().toISOString();
-  }
+  function nowISO() { return new Date().toISOString(); }
 
-  // ✅ userId from session (replaces Clerk's user.id)
-  function getUserId(): string | null {
-    return sessionUser?.id ?? null;
-  }
-
-  function setItemsState(next: CRMItem[]) {
-    setItems(next);
+  function actorName(): string {
+    return sessionUser?.name ?? sessionUser?.email?.split("@")[0] ?? "—";
   }
 
   function syncLocal(next: CRMItem[]) {
@@ -63,36 +42,20 @@ export function useCRMStore() {
   }
 
   function withActivity(item: CRMItem, text: string): CRMItem {
-    const activity: ActivityItem = { at: nowISO(), text };
+    const activity: ActivityItem = { at: nowISO(), text, by: actorName() };
     return { ...item, activity: [activity, ...(item.activity || [])] };
   }
 
   async function fetchItemsFromSource() {
-    const userId = getUserId();
-
-    // Don't fetch until session has loaded
-    if (!isLoaded || !userId) {
-      setLoading(false);
-      return [];
-    }
-
+    if (!isLoaded || !sessionUser?.id) { setLoading(false); return []; }
     try {
       setLoading(true);
       setError(null);
-
-      const dbItems = await loadItemsFromDB(userId);
-
-      if (Array.isArray(dbItems)) {
-        syncLocal(dbItems);
-        return dbItems;
-      }
-
-      const local = loadItems();
-      setItemsState(local);
-      return local;
+      const dbItems = await loadItemsFromDB();
+      if (Array.isArray(dbItems)) { syncLocal(dbItems); return dbItems; }
+      const local = loadItems(); setItems(local); return local;
     } catch {
-      const local = loadItems();
-      setItemsState(local);
+      const local = loadItems(); setItems(local);
       setError("Failed to load from database. Showing local data.");
       return local;
     } finally {
@@ -100,7 +63,6 @@ export function useCRMStore() {
     }
   }
 
-  // ✅ Fetch items once session user is loaded
   useEffect(() => {
     if (!isLoaded) return;
     seedIfEmpty([]);
@@ -108,9 +70,7 @@ export function useCRMStore() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded, sessionUser?.id]);
 
-  async function refreshItems() {
-    return fetchItemsFromSource();
-  }
+  async function refreshItems() { return fetchItemsFromSource(); }
 
   const selected = useMemo(
     () => items.find((i) => i.id === selectedId) || null,
@@ -118,46 +78,36 @@ export function useCRMStore() {
   );
 
   async function addItem(input: Omit<CRMItem, "id" | "activity">) {
-    const userId = getUserId();
-    if (!userId) throw new Error("Not authenticated");
-
+    if (!sessionUser?.id) throw new Error("Not authenticated");
     const localItem: CRMItem = {
       ...input,
       id: generateId("item"),
-      activity: [{ at: nowISO(), text: "Lead created" }],
+      activity: [{ at: nowISO(), text: "Lead created", by: actorName() }],
     };
-
     const optimistic = [localItem, ...items];
     syncLocal(optimistic);
     setSelectedId(localItem.id);
-
     try {
-      const created = await createItemInDB(userId, localItem);
-
+      const created = await createItemInDB(localItem);
       if (created?.id) {
-        const replaced = optimistic.map((i) =>
-          i.id === localItem.id ? created : i
-        );
+        const replaced = optimistic.map((i) => i.id === localItem.id ? created : i);
         syncLocal(replaced);
         setSelectedId(created.id);
         return created as CRMItem;
       }
-    } catch {
-      // keep optimistic
+    } catch (err) {
+      console.error("createItemInDB failed:", err);
     }
-
     return localItem;
   }
 
   async function updateItem(updated: CRMItem, activityText?: string) {
     const finalItem = activityText ? withActivity(updated, activityText) : updated;
-
-    const optimistic = items.map((i) => (i.id === finalItem.id ? finalItem : i));
+    const optimistic = items.map((i) => i.id === finalItem.id ? finalItem : i);
     syncLocal(optimistic);
-
     try {
       const saved = await updateItemInDB(finalItem);
-      const confirmed = optimistic.map((i) => (i.id === saved.id ? saved : i));
+      const confirmed = optimistic.map((i) => i.id === saved.id ? saved : i);
       syncLocal(confirmed);
       return saved;
     } catch {
@@ -168,47 +118,28 @@ export function useCRMStore() {
   function disableItem(itemId: string, reason: string) {
     const item = items.find((i) => i.id === itemId);
     if (!item) return;
-
     updateItem(
-      {
-        ...item,
-        disabled: true,
-        disabledReason: reason,
-        disabledAt: nowISO(),
-      },
+      { ...item, disabled: true, disabledReason: reason, disabledAt: nowISO() },
       `Lead disabled: ${reason}`
     );
-
     setSelectedId(null);
   }
 
   function moveStage(itemId: string, stage: Stage) {
     const item = items.find((i) => i.id === itemId);
     if (!item) return;
-
     updateItem(
       { ...item, stage },
       stage === "ACTIVE" ? "Moved to Active Events" : "Moved to Onboarding"
     );
   }
 
-  function selectItem(id: string | null) {
-    setSelectedId(id);
-  }
+  function selectItem(id: string | null) { setSelectedId(id); }
 
   return {
-    items,
-    selected,
-    selectedId,
-    selectItem,
-    loading,
-    error,
-    refreshItems,
-    addItem,
-    updateItem,
-    disableItem,
-    moveStage,
-    // ✅ Expose session user in case pages need it (e.g. showing name in header)
+    items, selected, selectedId, selectItem,
+    loading, error, refreshItems,
+    addItem, updateItem, disableItem, moveStage,
     sessionUser,
   };
 }

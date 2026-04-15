@@ -14,6 +14,8 @@ import { SidebarDrawer } from "../../components/layout/Sidebardrawer";
 import { useCRMStore } from "@/hooks/useCRMStore";
 import type { CRMItem } from "@/types/crm";
 import { DiscoverEventsModal } from "@/components/discovery/DiscoverEventsModal";
+import { HistoryDrawer } from "@/components/history/HistoryDrawer";
+import { useManagers } from "@/hooks/useManagers"
 
 /* ------------------ Filters ------------------ */
 
@@ -99,6 +101,7 @@ function NewLeadModal({
   onClose,
   onSave,
   saving = false,
+  managers = [],
 }: {
   open: boolean;
   onClose: () => void;
@@ -117,6 +120,7 @@ function NewLeadModal({
     sourceType?: "Venue" | "Organizer";
   }) => Promise<void> | void;
   saving?: boolean;
+  managers?: string[];
 }) {
   const [title, setTitle] = useState("");
   const [platform, setPlatform] = useState<
@@ -446,6 +450,10 @@ function OnboardingPageInner() {
   const [newLeadOpen, setNewLeadOpen] = useState(false);
   const [creatingLead, setCreatingLead] = useState(false);
   const [discoverOpen, setDiscoverOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  // Approved users for manager dropdowns
+  const { managers: managerOptions } = useManagers();
 
   useEffect(() => {
     refreshItems();
@@ -700,6 +708,14 @@ function OnboardingPageInner() {
 
             <button
               type="button"
+              onClick={() => setHistoryOpen(true)}
+              className="rounded-full bg-white/5 px-4 py-2 text-sm font-medium text-white/70 hover:bg-white/10 border border-white/10"
+            >
+              🕐 History
+            </button>
+
+            <button
+              type="button"
               onClick={async () => {
                 await fetch("/api/auth/logout", { method: "POST" });
                 window.location.href = "/login";
@@ -782,44 +798,30 @@ function OnboardingPageInner() {
         )}
       </section>
       <DiscoverEventsModal
-          open={discoverOpen}
-          onClose={() => setDiscoverOpen(false)}
-          onImport={async (events) => {
-            for (const event of events) {
-              await addItemToStore({
-                title: event.title,
-                platform: event.platform as any,
-                eventType: event.eventType ?? "Other",      // ✅ safe default
-                manager: event.manager,                      // ✅ comes from modal dropdown
-                stage: "ONBOARDING",
-                eventName: event.eventName ?? undefined,
-                city: event.city ?? undefined,
-                venue: event.venue ?? undefined,
-                eventLink: event.eventLink ?? undefined,
-                startDate: event.startDate ?? undefined,
-                endDate: event.endDate ?? undefined,
-                onboarding: {
-                  contactDetails: { checked: false },
-                  commissionSettled: { checked: false },
-                  partnerCreated: { checked: false },
-                } as any,
-                active: {
-                  orgVerified: { checked: false },
-                  discountAsked: { checked: false },
-                  promoCardShared: { checked: false },
-                  mysiteMade: { checked: false },
-                  mysiteGiven: { checked: false },
-                  promoFollowUp: { checked: false },
-                  discountFollowUp: { checked: false },
-                  firstSalesUpdate: { checked: false },
-                } as any,
-                disabled: false,
-              } as any);
-            }
-            await refreshItems();
-          }}
-        />
-      
+  open={discoverOpen}
+  onClose={() => setDiscoverOpen(false)}
+  onImport={async (events) => {
+    for (const event of events) {
+      await addItemToStore({
+        title: event.title,
+        platform: event.platform as any,
+        eventType: event.eventType,
+        manager: sessionUser?.name ?? "AUTO",
+        stage: "ONBOARDING",
+        eventName: event.eventName,
+        city: event.city,
+        venue: event.venue,
+        eventLink: event.eventLink,
+        startDate: event.startDate,
+        onboarding: { contactDetails: { checked: false }, commissionSettled: { checked: false }, partnerCreated: { checked: false } } as any,
+        active: { orgVerified: { checked: false }, discountAsked: { checked: false }, promoCardShared: { checked: false }, mysiteMade: { checked: false }, mysiteGiven: { checked: false }, promoFollowUp: { checked: false }, discountFollowUp: { checked: false }, firstSalesUpdate: { checked: false } } as any,
+        disabled: false,
+      } as any);
+    }
+    await refreshItems();
+  }}
+/>
+
       <OnboardingStepModal
         open={stepModalOpen}
         stepKey={modalKey}
@@ -848,7 +850,10 @@ function OnboardingPageInner() {
         }}
         onSave={handleCreateNewLead}
         saving={creatingLead}
+        managers={managerOptions}
       />
+
+      <HistoryDrawer open={historyOpen} onClose={() => setHistoryOpen(false)} />
     </main>
   );
 }
